@@ -1,0 +1,6 @@
+;; Object ERIPAPI
+;; EDE Project Files are auto generated: Do Not Edit
+(ede-proj-project "ERIPAPI"
+  :file "Project.ede"
+  :name "ERIPAPI"
+  :targets nil)
