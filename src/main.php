@@ -6,6 +6,7 @@ require_once API_ROOT_DIR . '/include/EripAPI/EripAPI.php';
 require_once API_ROOT_DIR . '/include/EripAPI/DB.php';
 require_once API_ROOT_DIR . '/../lib/JsonRPC/Server.php';
 include API_ROOT_DIR . '/include/util/Logger.php';
+include API_ROOT_DIR . '/include/util/ErrorMessages.php';
 
 use JsonRPC\Server as Server;
 
@@ -28,11 +29,19 @@ try {
                                   }
                                   return $authOK;
                               }
-                        );    
+                        );
+    
     $server->attachException( 'EripAPI\HMACException' );
     $server->attachException( 'EripAPI\MsgTimeException' );
-    $server->attach( new EripAPI );
-    $server->before( array( 'EripAPI\Security', 'verifyHMAC' ) );
+    
+    $eripAPI = new EripAPI;
+    
+    $server->attach( $eripAPI );
+    $server->before( function ($username, $password, $class, $method, $param) use ($db, $eripAPI) {
+                         EripAPI\Security::verifyHMAC($username, $password, $class, $method, $param);
+                         $eripAPI->userId = $db->getIdByName($username);
+                       }
+                   );
 
     $response = $server->execute();
     return $response;

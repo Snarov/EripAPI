@@ -3,24 +3,65 @@
 require __DIR__ . '/IEripAPI.php';
 require __DIR__ . '/Security.php';
 require __DIR__ . '/ParamsChecker.php';
+require __DIR__ . '/ERIPMessageManager.php';
 
 use EripAPI\ParamsChecker as ParamsChecker;
+use EripAPI\ERIPMessageManager as MessageManager;
+
+class APIInternalError extends Exception{};
 
 class EripAPI implements IEripAPI {
+
+    public $userId; // от имени пользователя с этим id выполняются функции API
 
      /**
      * Выставить новый счет в ЕРИП.
      *
-     * @param int $eripID Идентификатор услуги в ЕРИП
+     * @param integer $eripID Идентификатор услуги в ЕРИП
      * @param string $personalAccNum Номер лицевого счета (уникальное значение, однозначно идентифицирующее потребителя услуг или товар)
      * @param float $amount Сумма задолженности потребителя услуг перед производителем услуг. Отрицательное значение означает задолженность производителя перед потребителем
-     * @param int $currencyCode  Код валюты требований к оплате 
-     * @param object $info Дополнительная инорфмация о платеже
+     * @param integer $currencyCode  Код валюты требований к оплате 
+     * @param object $info Дополнительная инорфмация о счете
      * @param string $callbackURL Адрес, по которому произойдет обращение при изменении статуса заказа
-     * @return int Номер счета
+     * @return integer Номер счета
      */
     function createBill( $eripID, $personalAccNum, $amount, $currencyCode, $info = null, $callbackURL = null) {
-       ParamsChecker::createBillParamsCheck();
+       ParamsChecker::createBillParamsCheck($eripID, $personalAccNum, $amount, $currencyCode, $info, $callbackURL);
+
+       global $logger;
+       global $db;
+    
+       if ( ! $db ) {
+           $logger->write('error', 'Ошибка создания сообщения 202: невозможно подключиться к БД');
+           throw APIInternalError(API_INTERNAL_ERR_MSG);
+       }
+       
+       $ftpConnectionData = $db->getFtpConnectionData($this->userId);
+       $msgNum = $db->getNextBillNum();
+       if (  empty($ftpConnectionData) ||  empty($msgNum) ) {
+           $logger->write('error', 'Ошибка создания сообщения 202: данные из БД не получены');
+           throw APIInternalError(API_INTERNAL_ERR_MSG);
+       }
+
+       $eripCredentials = $db->getEripCredentials($userId);
+       if ( empty($eripCredentials) ) {
+           $logger->write('error', 'Ошибка создания сообщения 202: данные об абоненте ЕРИП не получены');
+           throw APIInternalError(API_INTERNAL_ERR_MSG);
+       }
+
+       extract($ftpConnectionData);
+       $msgManager = new MessageManager($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
+       if ( ! $msgManager->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $info) ) {
+           $logger->write('error', 'Ошибка создания сообщения 202: ошибка отправки файла сообщения на ftp-сервер ЕРИП');
+           throw APIInternalError(API_INTERNAL_ERR_MSG);
+       }
+       
+       $db->addBill($this->userId,  $eripID, $personalAccNum, $amount, $currencyCode, $info);
+       if ( filter_var($callbackURL, FILTER_VALIDATE_URL) !== false ) {
+           $db->addRunningOperation($this->userId, 1, array('callbackURL' => $callbackURL));
+       }
+
+       return $msgNum;
     }
     
     /**
@@ -70,10 +111,10 @@ class EripAPI implements IEripAPI {
     /**
      * Получить детальную информацию по платежу
      *
-     * @param $paymentNum
+     * @param $billNum
      * @return object Информация об оплате
      */
-    function getPayment( $paymentNum ) {
+    function getPayment( $billNum ) {
         return null;
     }
     

@@ -1,5 +1,7 @@
 <?php
-    
+
+namespace EripAPI;
+
 /**
 * Класс, который служит для управления (создания, чтения, удаления ) сообщениями ЕРИП на FTP сервере ЕРИП
 */
@@ -11,7 +13,7 @@ class ERIPMessageManager {
 
     private $ftpRoot;
 
-    public __construct($ftpServAddr, $ftpUser, $ftpPassword){
+    public function __construct($ftpServAddr, $ftpUser, $ftpPassword) {
         $this->ftpRoot = "ftp://$ftpUser:$ftpPassword@$ftpServAddr";
     }
 
@@ -23,22 +25,21 @@ class ERIPMessageManager {
     * @param string $personalAccNum Номер лицевого счета (уникальное значение, однозначно идентифицирующее потребителя услуг или товар)
     * @param float $amount Сумма задолженности потребителя услуг перед производителем услуг. Отрицательное значение означает задолженность производителя перед потребителем
     * @param int $currencyCode  Код валюты требований к оплате 
-    * @param string $expireDate Период оплаты (MM.YYYY)
-    * @param ERIPCredentials $eripCredentials Данные производителя услуг в системе ЕРИП.
+    * @param array ERIPCredentials $eripCredentials Данные производителя услуг в системе ЕРИП.
     * @param object $info Дополнительная инорфмация о платеже
     * @return boolean true в случае успешной отправки сообщения, иначе - false.
     */
-    public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $expireDate, ERIPCredentials $eripCredentials, $info){
-        $header = self::MSG_VERSION . self::DELIMITER . $eripCredentials->subcriberCode . self::DELIMITER .
+    public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $info){
+        $header = self::MSG_VERSION . self::DELIMITER . $eripCredentials['subcriber_code'] . self::DELIMITER .
                     $msgNum . self::DELIMITER . date('YmdHis') . self::DELIMITER . '1' .self::DELIMITER .
-                    $eripCredentials->unp . self::DELIMITER . $eripCredentials->bankCode . self::DELIMITER .
-                    $eripCredentials->accountNum . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
+                    $eripCredentials['unp'] . self::DELIMITER . $eripCredentials-['bank_code'] . self::DELIMITER .
+                    $eripCredentials['account_num'] . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
                     self::DELIMITER;
 
         $body = self::ENTRY_TYPE . self::DELIMITER . $personalAccNum . self::DELIMITER .
-                $info->fullName . self::DELIMITER . $info->address . self::DELIMITER . self::DELIMITER .
-                $amount . self::DELIMITER . self::DELIMITER . self::DELIMITER . $info->additionalInfo . self::DELIMITER .
-                $info->additionalData . self::DELIMITER . self::DELIMITER . self::DELIMITER . self::DELIMITER . 
+                $info['fullname'] . self::DELIMITER . $info['address'] . self::DELIMITER . self::DELIMITER .
+                $amount . self::DELIMITER . self::DELIMITER . self::DELIMITER . $info['additionalInfo'] . self::DELIMITER .
+                $info['additionalData'] . self::DELIMITER . self::DELIMITER . self::DELIMITER . self::DELIMITER . 
                 'PS' . self::DELIMITER;
 
         $msgContent = iconv('UTF-8', 'CP1251', $header . PHP_EOL . $body);
@@ -181,7 +182,7 @@ class ERIPMessageManager {
     }
 
     /**
-    * Удаляет файл сообщения на сервере ЕРИП. Файл для удаления должен нахдится в директории in
+    * Удаляет файл сообщения на сервере ЕРИП. Файл для удаления должен находится в директории in
     *
     * @param string $filename 
     * @return boolean true в случае успеха, иначе - false
