@@ -17,6 +17,10 @@ class DB {
         $this->db = new mysqli($DBHost, $DBUser, $DBPassword, $DBName);
     }
 
+    public function __destruct() {
+        $db->close();
+    }
+
     /**
      * Возвращает пароль пользователя, если пользователь с таким именем существует и активен. Иначе возвращает false
      *
