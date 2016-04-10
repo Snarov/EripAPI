@@ -68,10 +68,35 @@ class EripAPI implements IEripAPI {
      * Получить информацию о счете
      *
      * @param $billNum Номер счета
-     * @return object billDetails
+     * @return array Информация о счете или null если счета с таким номером не существует
      */
-    function getBillDetails( $billNum ){
-        return null;
+    function getBillDetails($billNum){
+        ParamsChecker::billNumCheck($billNum);
+
+        global $db;
+        if ( ! $db ) {
+            $logger->write('error', 'Ошибка: невозможно подключиться к БД');
+            throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        $rawBillDetails = $db->getBill($billNum);
+        if ( empty ($rawBillDetails) ) {
+            return null;
+        }
+        //Выбираем только нужные поля и изменяем стиль именования
+        $billDetails['eripID'] = $rawBillDetails['erip_id'];
+        $billDetails['personalAccNum'] = $rawBillDetails['personal_acc_num'];
+        $billDetails['amount'] = $rawBillDetails['amount'];
+        $billDetails['currencyCode'] = $rawBillDetails['currency_code'];
+        $billDetails['status'] = $rawBillDetails['status'];
+        $billDetails['timestamp'] = $rawBillDetails['timestamp'];
+        if ( $rawBillDetails['customer_fullname'] ) {  $billDetails['info']['customerFullname'] = $rawBillDetails['customer_fullname']; }
+        if ( $rawBillDetails['customer_address'] ) {  $billDetails['info']['customerAddress'] = $rawBillDetails['customer_address']; }
+        if ( $rawBillDetails['additional_info'] ) {  $billDetails['info']['additionalInfo'] = $rawBillDetails['additional_info']; }
+        if ( $rawBillDetails['additional_data'] ) {  $billDetails['info']['additionalData'] = $rawBillDetails['additional_data']; }
+        //TODO добавить поле с информацией по счетчикам (meters)
+
+        return $billDetails;
     }
 
     /**
@@ -81,7 +106,7 @@ class EripAPI implements IEripAPI {
      * @return int Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен)
      */
     function getBillStatus( $billNum ) {
-        return 1;
+
     }
 
     /**
