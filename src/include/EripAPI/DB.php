@@ -365,6 +365,38 @@ class DB {
         }  
         return $deleteSuccessful;
     }
+
+    /**
+     * Возвращает все записи из таблицы bills за указанный период и с указаными значениями( опционально )
+     *
+     * @param integer $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
+     * @param integer $fromDatetime Начало периода (UNIX-время)
+     * @param integer $toDatetime Конец периода (UNIX-время)
+     * @param integer $status Код статуса
+     *
+     * @return Все строки, удовлетворяющие условиям
+     */
+    public function getBills($eripID, $fromTimestamp , $toTimestamp, $status) {
+        //части SQL-запроса для необязательных условий
+        $optionalConditions = '';
+        if ( null !== $eripID ) { $optionalConditions .= "AND erip_id = $eripID "; }
+        if ( null !== $status ) { $optionalConditions .= "AND status = $status"; }
+
+        try {
+            $stmt = $this->db->prepare('SELECT * FROM bills WHERE timestamp BETWEEN ? AND ? ' . $optionalConditions);
+            $stmt->bind_param('ii', $fromTimestamp, $toTimestamp);
+            $stmt->execute();
+            $bills = $this->fetch($stmt);
+
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+
+        return $bills;
+    }
     
     /**
      * Разворачивает результат запроса и помещает значения столбцов в массив

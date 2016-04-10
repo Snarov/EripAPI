@@ -71,22 +71,28 @@ abstract class ParamsChecker {
     }
 
     /**
-    * Проверяет корректность параметров методов getBills() и getpayments()
+    * Проверяет корректность параметров методов getBills() и getPayments()
     *
     * @param int $eripID Идентификатор услуги в ЕРИП.
-    * @param int $fromDatetime Начало периода (UNIX-время)
-    * @param int $toDatetime Конец периода (UNIX-время)
+    * @param int $fromTimestamp Начало периода (UNIX-время)
+    * @param int $toTimestamp Конец периода (UNIX-время)
     * @param int $status Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен)
     */
-    static function getBillsOrPaymentsParamsCheck($eripID, $fromDatetime, $toDatetime, $status = null) {
-        if ( preg_match( self::ERIP_ID_REGEX, $eripID ) !== 1 ) {
+    static function getBillsOrPaymentsParamsCheck($eripID, $fromTimestamp, $toTimestamp, $status) {
+        if (  null !== $eripID && preg_match( self::ERIP_ID_REGEX, $eripID ) !== 1 ) {
             $errMsg .= "'eripID' must be an eight-digit number" . PHP_EOL;
         }
-        if ( ! is_numeric($fromDatetime) || ! is_numeric($toDatetime) || $fromDatetime < 0 || $toDatetime < 0 ) {
-            $errMsg .= "'fromDatetime' and 'toDatetime' must be non-negative numbers" . PHP_EOL;
-        } else if ( $toDatetime <= $fromDatetime ) {
-            $errMsg .= "'toDatetime' must be greater than 'fromDatetime'" . PHP_EOL;
+        
+        if (  '' !== $fromTimestamp && ( is_numeric($fromTimestamp) || $fromTimestamp < 0 ) ) {
+            $errMsg .= "'fromTimestamp' must be non-negative number" . PHP_EOL;
         }
+        if (  '' !== $toTimestamp && ( is_numeric($toTimestamp) || $tofromTimestamp < 0 ) ) {
+            $errMsg .= "'toTimestamp' must be non-negative number" . PHP_EOL;
+        }
+        if ( '' !== $fromTimestamp && '' !== $toTimestamp &&  $toTimestamp <= $fromTimestamp ) {
+            $errMsg .= "'toTimestamp' must be greater than 'fromTimestamp'" . PHP_EOL;
+        }
+        
         if (  null !== $status && ! preg_match(self::STATUS_REGEX, $status ) ){
             $errMsg .= "'status' value must be an integer from 1 to 5" . PHP_EOL;
         }

@@ -70,7 +70,7 @@ class EripAPI implements IEripAPI {
      * @param $billNum Номер счета
      * @return array Информация о счете или null если счета с таким номером не существует
      */
-    function getBillDetails($billNum){
+    function getBill($billNum){
         ParamsChecker::billNumCheck($billNum);
 
         global $db;
@@ -155,14 +155,57 @@ class EripAPI implements IEripAPI {
      * Получить список выставленных счетов за определнный промежуток времени и с определенным статусом. Если промежуток времени не указан, то возвращается список счетов за последние 30 дней
      *
      * @param int $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
-     * @param int $fromDatetime Начало периода (UNIX-время)
-     * @param int $toDatetime Конец периода (UNIX-время)
+     * @param int $fromTimestamp Начало периода (UNIX-время)
+     * @param int $toTimestamp Конец периода (UNIX-время)
      * @param int $status Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен). Если не указан, то будут возвращены все счета,
      * вне зависимости от их текущего статуса
      * @return array Список счетов 
      */
-    function getBills( $eripID, $fromDatetime = '', $toDatetime = '', $status = '') {
-        return array();
+    function getBills( $eripID = null, $fromTimestamp = '', $toTimestamp = '', $status = '') {
+        ParamsChecker::getBillsOrPaymentsParamsCheck($eripID, $fromTimestamp, $toTimestamp, $status);
+
+        global $logger;
+        global $db;
+        
+        if ( ! $db ) {
+            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
+            throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        if ( '' === $fromTimestamp ) {
+            $fromTimestamp = time() - 30 * 24 * 60 * 60; //устанавливается равным моменту, отстоящим на 30 дней назад.
+        }
+        if ( '' === $toTimestamp ) {
+            $toTomestamp = time(); //устанавливается равным настоящему моменту
+        }
+
+        $rawBillDetails = $db->getBills($eripID, $fromTimestamp, $toTimestamp, $status);
+        
+        if ( empty ($rawBillDetails) ) {
+            return null;
+        }
+
+        $billsDetails = array();
+        foreach ( $rawBillsDetails as $rawBillDetails ) {
+            $billDetails = array();
+            
+            //Выбираем только нужные поля и изменяем стиль именования
+            $billDetails['eripID'] = $rawBillDetails['erip_id'];
+            $billDetails['personalAccNum'] = $rawBillDetails['personal_acc_num'];
+            $billDetails['amount'] = $rawBillDetails['amount'];
+            $billDetails['currencyCode'] = $rawBillDetails['currency_code'];
+            $billDetails['status'] = $rawBillDetails['status'];
+            $billDetails['timestamp'] = $rawBillDetails['timestamp'];
+            if ( $rawBillDetails['customer_fullname'] ) {  $billDetails['info']['customerFullname'] = $rawBillDetails['customer_fullname']; }
+            if ( $rawBillDetails['customer_address'] ) {  $billDetails['info']['customerAddress'] = $rawBillDetails['customer_address']; }
+            if ( $rawBillDetails['additional_info'] ) {  $billDetails['info']['additionalInfo'] = $rawBillDetails['additional_info']; }
+            if ( $rawBillDetails['additional_data'] ) {  $billDetails['info']['additionalData'] = $rawBillDetails['additional_data']; }
+            //TODO добавить поле с информацией по счетчикам (meters)
+
+            $billsDetails[] = $billDetails;
+        }
+
+        return $billsDetails;
     }
     
     /**
