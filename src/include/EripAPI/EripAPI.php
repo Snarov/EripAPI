@@ -103,10 +103,18 @@ class EripAPI implements IEripAPI {
      * Получить текущий статус счета
      * 
      * @param $billNum Номер счета 
-     * @return int Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен)
+     * @return int Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен) или null в случае если счет не найден
      */
     function getBillStatus( $billNum ) {
+        ParamsChecker::billNumCheck($billNum);
 
+        global $db;
+        if ( ! $db ) {
+            $logger->write('error', 'Ошибка: невозможно подключиться к БД');
+            throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        return $db->getBillStatus($billNum) ;
     }
 
     /**

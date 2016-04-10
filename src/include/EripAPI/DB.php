@@ -55,7 +55,7 @@ class DB {
      * @return string
      */
     public function getUserSecretKey($username) {
-         global $logger;
+        global $logger;
         
         $secretKey = false;
         try {
@@ -318,6 +318,31 @@ class DB {
         }
         
         return $bill;
+    }
+
+    /**
+     * Возвращает значение поля status счета с указанным номером
+     *
+     * @param integer $billNum
+     * @return integer Код статуса. Если счета не существует, то его код статуса - NULL
+    */
+    public function getBillStatus($billNum) {
+        global $logger;
+        
+        try {
+            $stmt = $this->db->prepare('SELECT status FROM bills WHERE id = ?');
+            $stmt->bind_param('i', $billNum);
+            $stmt->execute();
+            $stmt->bind_result($billStatus);
+            $stmt->fetch();
+
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }  
+        return $billStatus;
     }
     
     /**
