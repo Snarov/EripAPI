@@ -293,6 +293,32 @@ class DB {
             return false;
         }
     }
+
+    /**
+     * Возвращает данные из строки таблицы счетов
+     *
+     * @param integer $billNum
+     * @return array Запись о счете или пустой массив, если счета с таким номером не существует
+     */
+    public function getbill($billNum) {
+         $bill = array();
+
+        try {
+            $stmt = $this->db->prepare('SELECT * FROM bills WHERE id = ?');
+            $stmt->bind_param('i', $billNum);
+            $stmt->execute();
+            $bill = $this->fetch($stmt);
+
+            global $logger;
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+        
+        return $bill;
+    }
     
     /**
      * Разворачивает результат запроса и помещает значения столбцов в массив
