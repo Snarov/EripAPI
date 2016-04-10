@@ -301,8 +301,6 @@ class DB {
      * @return array Запись о счете или пустой массив, если счета с таким номером не существует
      */
     public function getbill($billNum) {
-         $bill = array();
-
         try {
             $stmt = $this->db->prepare('SELECT * FROM bills WHERE id = ?');
             $stmt->bind_param('i', $billNum);
@@ -396,6 +394,30 @@ class DB {
         }
 
         return $bills;
+    }
+
+    /**
+     * Возвращшает информацию по платежу
+     *
+     * @param $billNum номер счета, по которому проведен платеж
+     * @return Запись о платеже или пустой массив, если оплаты счета с таким номером не существует
+     */
+    public function getPayment($billNum) {
+        try {
+            $stmt = $this->db->prepare('SELECT P.*, B.erip_id, B.personal_acc_num FROM payments P JOIN bills B ON P.bill = B.id AND B.bill = ?');
+            $stmt->bind_param('i', $billNum);
+            $stmt->execute();
+            $payment = $this->fetch($stmt);
+
+            global $logger;
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+        
+        return $payment;
     }
     
     /**

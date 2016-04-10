@@ -15,7 +15,7 @@ abstract class ParamsChecker {
     const CURRENCY_CODE_REGEX = '/^\d{1,3}$/';
     const STATUS_REGEX = '/^[12345]$/';
 
-/**
+    /**
      * Проверяет корректность параметров, преданных методу createBill()
      *
      * @param int $eripID Идентификатор услуги в ЕРИП

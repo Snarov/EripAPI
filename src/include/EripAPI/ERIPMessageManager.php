@@ -159,7 +159,7 @@ class ERIPMessageManager {
                                                     'additional_info',
                                                     'additional_data',
                                                     'authorization_way_id',
-                                                    'devi   ce_type_code',
+                                                    'device_type_code',
                                                   ),
                                     );
         $msgType2BodyKey['216'] = array_splice($msgType2BodyKeys['206'], 9, 0, 'reversal_datetime'); //для сообщения 216 тело отличается наличием одного дополнительного поля

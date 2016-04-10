@@ -212,10 +212,49 @@ class EripAPI implements IEripAPI {
      * Получить детальную информацию по платежу
      *
      * @param $billNum
-     * @return object Информация об оплате
+     * @return object Информация об оплате и null, если платежа по счету с таким номером не существует
      */
-    function getPayment( $billNum ) {
-        return null;
+    function getPayment($billNum) {
+        ParamsChecker::billNumCheck($billNum);
+
+        global $logger;
+        global $db;
+        
+        if ( ! $db ) {
+            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
+            throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        $rawPaymentDetails = $db->getPayment($billNum);
+        if ( empty ($rawPaymentBillDetails) ) {
+            return null;
+        }
+         //Выбираем только нужные поля и изменяем стиль именования
+        $paymentDetails['eripID'] = $rawPaymentDetails['erip_id'];
+        $paymentDetails['personalAccNum'] = $rawPaymentDetails['personal_acc_num'];
+        $paymentDetails['amount'] = $rawPaymentDetails['amount'];
+        $paymentDetails['fineAmount'] = $rawPaymentDetails['fine_amount'];
+        $paymentDetails['currencyCode'] = $rawPaymentDetails['currency_code'];
+        $paymentDetails['status'] = $rawPaymentDetails['status'];
+        $paymentDetails['paymentTimestamp'] = $rawPaymentDetails['payment_timestamp'];
+        $paymentDetails['eripOpNum'] = $rawPaymentDetails['erip_op_num'];
+        $paymentDetails['deviceId'] = $rawPaymentDetails['device_id'];
+        $paymentDetails['agentBankCode'] = $rawPaymentDetails['agent_bank_code'];
+        $paymentDetails['agentAccNum'] = $rawPaymentDetails['agent_acc_num'];
+        $paymentDetails['budgetPaymentCode'] = $rawPaymentDetails['budget_payment_code'];
+        if ( $paymentDetails['agent_op_num'] ) { $paymentDetails['agentOpNum'] = $rawPaymentDetails['agent_op_num']; }
+        if ( $paymentDetails['transfer_timestamp'] ) { $paymentDetails['transfer_timestamp'] = $rawPaymentDetails['transfer_timestamp']; }
+        if ( $paymentDetails['reversal_timestamp'] ) { $paymentDetails['reversal_timestamp'] = $rawPaymentDetails['reversal_timestamp']; }
+        if ( $rawPaymentDetails['customer_fullname'] ) {  $paymentDetails['info']['customerFullname'] = $rawPaymentDetails['customer_fullname']; }
+        if ( $rawPaymentDetails['customer_address'] ) {  $paymentDetails['info']['customerAddress'] = $rawPaymentDetails['customer_address']; }
+        if ( $paymentDetails['authorization_way'] ) { $paymentDetails['authorizationWay'] = $rawPaymentDetails['authorization_way']; }
+        if ( $rawPaymentDetails['additional_info'] ) {  $paymentDetails['info']['additionalInfo'] = $rawPaymentDetails['additional_info']; }
+        if ( $rawPaymentDetails['additional_data'] ) {  $paymentDetails['info']['additionalData'] = $rawPaymentDetails['additional_data']; }
+        if ( $paymentDetails['authorization_way_id'] ) { $paymentDetails['authorizationWayId'] = $rawPaymentDetails['authorization_way_id']; }
+        if ( $paymentDetails['device_type_code'] ) { $paymentDetails['deviceTypeCode'] = $rawPaymentDetails['device_type_code']; }
+        //TODO добавить поле с информацией по счетчикам (meters)
+
+        return $paymentDetails;
     }
     
     /**
