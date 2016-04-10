@@ -161,7 +161,7 @@ class EripAPI implements IEripAPI {
      * вне зависимости от их текущего статуса
      * @return array Список счетов 
      */
-    function getBills( $eripID = null, $fromTimestamp = '', $toTimestamp = '', $status = '') {
+    function getBills( $eripID = null, $fromTimestamp = '', $toTimestamp = '', $status = null) {
         ParamsChecker::getBillsOrPaymentsParamsCheck($eripID, $fromTimestamp, $toTimestamp, $status);
 
         global $logger;
@@ -179,9 +179,9 @@ class EripAPI implements IEripAPI {
             $toTomestamp = time(); //устанавливается равным настоящему моменту
         }
 
-        $rawBillDetails = $db->getBills($eripID, $fromTimestamp, $toTimestamp, $status);
+        $rawBillsDetails = $db->getBills($eripID, $fromTimestamp, $toTimestamp, $status);
         
-        if ( empty ($rawBillDetails) ) {
+        if ( empty ($rawBillsDetails) ) {
             return null;
         }
 
@@ -260,12 +260,70 @@ class EripAPI implements IEripAPI {
     /**
      * Получить список оплаченных счетов за определенный промежуток времени. Если промежуток времени не указан, то возвращается список оплаченных счетов за последние 30 дней
      *
-     * @param int $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
-     * @param int $fromDatetime Начало периода (UNIX-время)
-     * @param int $toDatetime Конец периода (UNIX-время)
+     * @param integer $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
+     * @param integer $fromTimestamp Начало периода (UNIX-время)
+     * @param integer $toTimestamp Конец периода (UNIX-время)
+     * @param integer $status Код статуса (1 - Оплата совершена, но средства не переведены на расчетный счет производителя услуги,  2 - Оплата совершена и средства переведены 
+     * на расчетный счет производителя услуги   3 - Сторнирован). Если не указан, то будут возвращены все платежи, вне зависимости от их текущего статуса.
+     *
      * @return array Список оплаченных счетов
      */
-    function getPayments ( $eripID, $fromDatetime = '', $toDatetime = '' ){
-        return array();
+    function getPayments ( $eripID, $fromTimestamp = '', $toTimestamp = '', $status = null ){
+        ParamsChecker::getBillsOrPaymentsParamsCheck($eripID, $fromTimestamp, $toTimestamp, $status);
+
+        global $logger;
+        global $db;
+        
+        if ( ! $db ) {
+            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
+            throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        if ( '' === $fromTimestamp ) {
+            $fromTimestamp = time() - 30 * 24 * 60 * 60; //устанавливается равным моменту, отстоящим на 30 дней назад.
+        }
+        if ( '' === $toTimestamp ) {
+            $toTomestamp = time(); //устанавливается равным настоящему моменту
+        }
+
+        $rawPaymentsDetails = $db->getBills($eripID, $fromTimestamp, $toTimestamp, $status);
+        
+        if ( empty ($rawPaymentsDetails) ) {
+            return null;
+        }
+
+        $paymentsDetails = array();
+        foreach ( $rawPaymentsDetails as $rawPaymentDetails ) {
+            $paymentDetails = array();
+
+            //Выбираем только нужные поля и изменяем стиль именования
+            $paymentDetails['eripID'] = $rawPaymentDetails['erip_id'];
+            $paymentDetails['personalAccNum'] = $rawPaymentDetails['personal_acc_num'];
+            $paymentDetails['amount'] = $rawPaymentDetails['amount'];
+            $paymentDetails['fineAmount'] = $rawPaymentDetails['fine_amount'];
+            $paymentDetails['currencyCode'] = $rawPaymentDetails['currency_code'];
+            $paymentDetails['status'] = $rawPaymentDetails['status'];
+            $paymentDetails['paymentTimestamp'] = $rawPaymentDetails['payment_timestamp'];
+            $paymentDetails['eripOpNum'] = $rawPaymentDetails['erip_op_num'];
+            $paymentDetails['deviceId'] = $rawPaymentDetails['device_id'];
+            $paymentDetails['agentBankCode'] = $rawPaymentDetails['agent_bank_code'];
+            $paymentDetails['agentAccNum'] = $rawPaymentDetails['agent_acc_num'];
+            $paymentDetails['budgetPaymentCode'] = $rawPaymentDetails['budget_payment_code'];
+            if ( $paymentDetails['agent_op_num'] ) { $paymentDetails['agentOpNum'] = $rawPaymentDetails['agent_op_num']; }
+            if ( $paymentDetails['transfer_timestamp'] ) { $paymentDetails['transfer_timestamp'] = $rawPaymentDetails['transfer_timestamp']; }
+            if ( $paymentDetails['reversal_timestamp'] ) { $paymentDetails['reversal_timestamp'] = $rawPaymentDetails['reversal_timestamp']; }
+            if ( $rawPaymentDetails['customer_fullname'] ) {  $paymentDetails['info']['customerFullname'] = $rawPaymentDetails['customer_fullname']; }
+            if ( $rawPaymentDetails['customer_address'] ) {  $paymentDetails['info']['customerAddress'] = $rawPaymentDetails['customer_address']; }
+            if ( $paymentDetails['authorization_way'] ) { $paymentDetails['authorizationWay'] = $rawPaymentDetails['authorization_way']; }
+            if ( $rawPaymentDetails['additional_info'] ) {  $paymentDetails['info']['additionalInfo'] = $rawPaymentDetails['additional_info']; }
+            if ( $rawPaymentDetails['additional_data'] ) {  $paymentDetails['info']['additionalData'] = $rawPaymentDetails['additional_data']; }
+            if ( $paymentDetails['authorization_way_id'] ) { $paymentDetails['authorizationWayId'] = $rawPaymentDetails['authorization_way_id']; }
+            if ( $paymentDetails['device_type_code'] ) { $paymentDetails['deviceTypeCode'] = $rawPaymentDetails['device_type_code']; }
+            //TODO добавить поле с информацией по счетчикам (meters)
+
+            $paymentsDetails[] = $paymentDetails;
+        }
+
+        return $paymentsDetails;
     }
 }
