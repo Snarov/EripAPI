@@ -12,6 +12,7 @@ class ERIPMessageManager {
     const DELIMITER = '^';
 
     private $ftpRoot;
+    private $deletionBuffer = array(); //хранит удаленные файлы для того чтобы их можно было восстановить в дальнейшем с помощью соотв. методов
 
     public function __construct($ftpServAddr, $ftpUser, $ftpPassword) {
         $this->ftpRoot = "ftp://$ftpUser:$ftpPassword@$ftpServAddr";
@@ -75,7 +76,7 @@ class ERIPMessageManager {
                                                     'msg202_datetime',
                                                     'result',
                                                     'err_msg',
-                                                  )
+                                                  ),
                                     '206' => array(
                                                     'msg_version',
                                                     'subscriber_code',
@@ -115,13 +116,13 @@ class ERIPMessageManager {
                                     '204' => array(
                                                     'entry_num',
                                                     'err_text',
-                                                  )
+                                                  ),
                                     '206' => array(
                                                     'entry_num',
                                                     'erip_id',
                                                     'account_num',
                                                     'fullname',
-                                                    'address'
+                                                    'address',
                                                     'period',
                                                     'amount',
                                                     'fine_amount',
@@ -143,7 +144,7 @@ class ERIPMessageManager {
                                                     'erip_id',
                                                     'account_num',
                                                     'fullname',
-                                                    'address'
+                                                    'address',
                                                     'period',
                                                     'amount',
                                                     'fine_amount',
@@ -159,6 +160,7 @@ class ERIPMessageManager {
                                                     'additional_data',
                                                     'authorization_way_id',
                                                     'devi   ce_type_code',
+                                                  ),
                                     );
         $msgType2BodyKey['216'] = array_splice($msgType2BodyKeys['206'], 9, 0, 'reversal_datetime'); //для сообщения 216 тело отличается наличием одного дополнительного поля
 
@@ -182,12 +184,77 @@ class ERIPMessageManager {
     }
 
     /**
-    * Удаляет файл сообщения на сервере ЕРИП. Файл для удаления должен находится в директории in
+    * Удаляет файл входящего сообщения на сервере ЕРИП. Файл для удаления должен находится в директории in или in/bak. Отмена удаления может быть произведена с помощью вызыова метода
+    * udnoDeleteMessage() с тем же значением аргумента $filename, что и при вызовае этой функции.
     *
     * @param string $filename 
     * @return boolean true в случае успеха, иначе - false
     */
-    public function deleteMessage($filename){
-        return unlink("$ftpRoot/in/$filename");
+    public function deleteInMessage($filename){
+        if ( file_exists("{$this->ftpRoot}/in/$filename") ) {
+             $fileURL = "{$this->ftpRoot}/in/$filename";
+        } else if ( file_exists("{$this->ftpRoot}/in/bak/$filename") ) {
+            $fileURL = "{$this->ftpRoot}/in/bak/$filename";
+        }
+
+        return $this->deleteFile($filename, $fileURL);
+    }
+
+    /**
+    * Удаляет файл исходящего сообщения на сервере ЕРИП. Файл для удаления должен находится в директории out. Отмена удаления может быть произведена с помощью вызыова метода
+    * udnoDeleteMessage() с тем же значением аргумента $filename, что и при вызовае этой функции.
+    *
+    * @param string $filename 
+    * @return boolean true в случае успеха, иначе - false
+    */
+    public function deleteOutMessage($filename){
+        return $this->deleteFile($filename, "$ftpRoot/out/$filename");
+    }
+
+    /**
+     * Отменяет ранее выполненное удаление файла
+     *
+     * @param $filename
+     * @return boolean true, если файл успешно восстановлен, иначе - false
+     */
+    public function undoDeleteMessage($filename) {
+        global $logger;
+
+        if ( ! array_key_exists($filename, $this->deletionBuffer) ) {
+            return false;
+        }
+
+        if ( file_put_contents($this->deletionBuffer[$filename]['file_URL'], $this->deletionBuffer[$filename]['file_content'] ) ) {
+            unset($this->deletionBuffer[$filename]);
+            return true;
+        } else {
+            $logger->write('error', __METHOD__ . ': Ошибка восстановления удаленного файла: не удается произвести запись в файл');
+            return false;
+        }
+    }
+
+    /**
+     * Удаляет указанный файл и сохраняет его в буфер для возможности дальнейшей отмены удаления
+     *
+     * @param $filename
+     * @param $fileURL
+     * @return boolean true в случае успеха, иначе - false
+     */
+    private function deleteFile ($filename, $fileURL) {
+        global $logger;
+        
+        if ($fileContent = file_get_contents($fileURL) ) {
+            $deleteSuccesful = unlink($fileURL);
+            if ( $deleteSuccessful ) {
+                $this->deletionBuffer[$filename] = ['file_URL' => $fileURL, 'file_content' => $fileContent];
+            } else {
+                $logger->write('error', __METHOD__ . 'Ошибка удаления файла с ftp-сервера');
+            }
+
+            return $deleteSuccesful;
+        } else {
+            $logger->write('error', __METHOD__ . 'Ошибка чтения файла с ftp-сервера');
+            return false;
+        }
     }
 }

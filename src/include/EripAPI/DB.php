@@ -344,6 +344,27 @@ class DB {
         }  
         return $billStatus;
     }
+
+    /**
+     * Производит удаление записи о платеже
+     *
+     * @param integer $billNum
+     * @return boolean true - в случае успешного удаления, иначе - false
+     */
+    public function deleteBill($billNum) {
+        global $logger;
+        
+        try {
+            $deleteSuccessful = $this->db->query("DELETE FROM bills WHERE id = $billNum");
+            
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }  
+        return $deleteSuccessful;
+    }
     
     /**
      * Разворачивает результат запроса и помещает значения столбцов в массив

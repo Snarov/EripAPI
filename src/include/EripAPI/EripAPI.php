@@ -124,7 +124,31 @@ class EripAPI implements IEripAPI {
      * @return bool true в случае успешного удаления, иначе - false
      */
     function deleteBill( $billNum ) {
-        return true;
+        ParamsChecker::billNumCheck($billNum);
+
+        global $logger;
+        global $db;
+
+        if ( ! $db ) {
+            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
+            throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        $ftpConnectionData = $db->getFtpConnectionData($this->userId);
+        if (  empty($ftpConnectionData) ) {
+           $logger->write('error', __METHOD__ . ': Ошибка: не удается получить данные, необходимые для установления ftp-соединения');
+           throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        extract($ftpConnectionData);
+        $msgManager = new MessageManager($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
+
+        if ( $msgManager->deleteInMessage("$billNum.202") && $db->deleteBill($billNum) ) {
+            return true;
+        } else {
+            $msgManager->undoDeleteMessage("$billNum.202");
+            return false;
+        }
     }
 
     /**
