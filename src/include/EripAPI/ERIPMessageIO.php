@@ -38,16 +38,18 @@ class ERIPMessageIO {
     * @param object $info Дополнительная инорфмация о платеже
     * @return boolean true в случае успешной отправки сообщения, иначе - false.
     */
-    public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $info){
+    public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info){
+        $msgDatetime = date('YmdHis', $msgTimestamp);
+        
         $header = self::MSG_VERSION . self::DELIMITER . $eripCredentials['subcriber_code'] . self::DELIMITER .
-                    $msgNum . self::DELIMITER . date('YmdHis') . self::DELIMITER . '1' .self::DELIMITER .
+                    $msgNum . self::DELIMITER . $msgDatetime . self::DELIMITER . '1' .self::DELIMITER .
                     $eripCredentials['unp'] . self::DELIMITER . $eripCredentials-['bank_code'] . self::DELIMITER .
                     $eripCredentials['account_num'] . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
                     self::DELIMITER;
 
         $body = self::ENTRY_TYPE . self::DELIMITER . $personalAccNum . self::DELIMITER .
                 $info['fullname'] . self::DELIMITER . $info['address'] . self::DELIMITER . self::DELIMITER .
-                $amount . self::DELIMITER . self::DELIMITER . self::DELIMITER . $info['additionalInfo'] . self::DELIMITER .
+                $amount . self::DELIMITER . self::DELIMITER . $msgDatetime . self::DELIMITER . $info['additionalInfo'] . self::DELIMITER .
                 $info['additionalData'] . self::DELIMITER . self::DELIMITER . self::DELIMITER . self::DELIMITER . 
                 'PS' . self::DELIMITER;
 

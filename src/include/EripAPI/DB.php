@@ -216,7 +216,7 @@ class DB {
      *
      * return boolean true в случае успешного добавления, иначе - false
      */
-    public function addBill($userId, $eripID, $personalAccNum, $amount, $currencyCode, array $info) {
+    public function addBill($userId, $eripID, $personalAccNum, $amount, $currencyCode, $billTimestamp, array $info) {
         //создаем части SQL-запроса для заполнения необязательных столбцов, использую данные массива $info
         $optionalFields = '';
         $optionalValues = '';
@@ -245,8 +245,8 @@ class DB {
         try {
             global $logger;
             
-            $query = "INSERT INTO bills (user, erip_id, personal_acc_num, amount, currency_code, $optionalFields)" .
-                   "VALUES ($userId, $eripID, $personalAccNum, $amount, $currencyCode, $optionalValues)";
+            $query = "INSERT INTO bills (user, erip_id, personal_acc_num, amount, currency_code, timestamp $optionalFields)" .
+                   "VALUES ($userId, $eripID, $personalAccNum, $amount, $currencyCode, $billTimestamp $optionalValues)";
             if ( $this->db->query($query) ) {
                 return true;
             } else {

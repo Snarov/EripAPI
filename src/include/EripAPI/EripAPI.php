@@ -49,14 +49,16 @@ class EripAPI implements IEripAPI {
            throw APIInternalError(API_INTERNAL_ERR_MSG);
        }
 
+       $msgTimestamp = time();
+       
        extract($ftpConnectionData);
-       $msgManager = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
-       if ( ! $msgManager->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $info) ) {
+       $msgIO = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
+       if ( ! $msgIO->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info) ) {
            $logger->write('error', 'Ошибка создания сообщения 202: ошибка отправки файла сообщения на ftp-сервер ЕРИП');
            throw APIInternalError(API_INTERNAL_ERR_MSG);
        }
        
-       $db->addBill($this->userId,  $eripID, $personalAccNum, $amount, $currencyCode, $info);
+       $db->addBill($this->userId,  $eripID, $personalAccNum, $amount, $currencyCode, $msgTimestamp, $info);
        if ( filter_var($callbackURL, FILTER_VALIDATE_URL) !== false ) {
            $db->addRunningOperation($this->userId, 1, array('callbackURL' => $callbackURL));
        }
