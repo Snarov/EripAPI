@@ -30,11 +30,6 @@ class EripAPI implements IEripAPI {
 
        global $logger;
        global $db;
-    
-       if ( ! $db ) {
-           $logger->write('error', 'Ошибка создания сообщения 202: невозможно подключиться к БД');
-           throw APIInternalError(API_INTERNAL_ERR_MSG);
-       }
        
        $ftpConnectionData = $db->getFtpConnectionData($this->userId);
        $msgNum = $db->getNextBillNum();
@@ -76,11 +71,7 @@ class EripAPI implements IEripAPI {
         ParamsChecker::billNumCheck($billNum);
 
         global $db;
-        if ( ! $db ) {
-            $logger->write('error', 'Ошибка: невозможно подключиться к БД');
-            throw APIInternalError(API_INTERNAL_ERR_MSG);
-        }
-
+      
         if ( $db->getBillUser($billNum) !== $this->userId ) {
             return null;
         }
@@ -115,10 +106,6 @@ class EripAPI implements IEripAPI {
         ParamsChecker::billNumCheck($billNum);
 
         global $db;
-        if ( ! $db ) {
-            $logger->write('error', 'Ошибка: невозможно подключиться к БД');
-            throw APIInternalError(API_INTERNAL_ERR_MSG);
-        }
 
         if ( $db->getBillUser($billNum) !== $this->userId ) {
             return null;
@@ -138,11 +125,6 @@ class EripAPI implements IEripAPI {
 
         global $logger;
         global $db;
-
-        if ( ! $db ) {
-            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
-            throw APIInternalError(API_INTERNAL_ERR_MSG);
-        }
 
         if ( $db->getBillUser($billNum) !== $this->userId ) {
             return false;
@@ -182,11 +164,6 @@ class EripAPI implements IEripAPI {
         global $logger;
         global $db;
         
-        if ( ! $db ) {
-            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
-            throw APIInternalError(API_INTERNAL_ERR_MSG);
-        }
-
         if ( '' === $fromTimestamp ) {
             $fromTimestamp = time() - 30 * 24 * 60 * 60; //устанавливается равным моменту, отстоящим на 30 дней назад.
         }
@@ -235,11 +212,6 @@ class EripAPI implements IEripAPI {
         global $logger;
         global $db;
         
-        if ( ! $db ) {
-            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
-            throw APIInternalError(API_INTERNAL_ERR_MSG);
-        }
-
         if ( $db->getBillUser($billNum) !== $this->userId ) {
             return null;
         }
@@ -293,11 +265,6 @@ class EripAPI implements IEripAPI {
         global $logger;
         global $db;
         
-        if ( ! $db ) {
-            $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
-            throw APIInternalError(API_INTERNAL_ERR_MSG);
-        }
-
         if ( '' === $fromTimestamp ) {
             $fromTimestamp = time() - 30 * 24 * 60 * 60; //устанавливается равным моменту, отстоящим на 30 дней назад.
         }
