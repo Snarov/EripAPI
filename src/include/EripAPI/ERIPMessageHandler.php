@@ -131,8 +131,8 @@ class ERIPMessageHandler {
              }
              $operation = $this->getMonitoringOperationByBill($billNum);
 
-             $message['status'] = 2;
-             $updateSuccessful = $db->updatePayment($billNum, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
+             $transferTimestamp = strtotime($paymentEntry['transfer_datetime']);
+             $updateSuccessful = $db->updatePayment($billNum, array_merge($paymentEntry, $message['header'], ['status' => 2, 'transfer_timestamp' => $transferTimestamp])); //для начала сойдет :)
              if ( $addSuccessful ) {
                  $billStatus = 3;
                  $db->setBillStatus($billNum, $billStatus);
@@ -163,8 +163,8 @@ class ERIPMessageHandler {
             }
             $operation = $this->getMonitoringOperationByBill($billNum);
 
-            $message['status'] = 3;
-            $updateSuccessful = $db->updatePayment($billNum, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
+            $reversalTimestamp = strtotime($paymentEntry['reversal_datetime']);
+            $updateSuccessful = $db->updatePayment($billNum, array_merge($paymentEntry, $message['header'], ['status' => 3, 'reversal_timestamp' => $reversalTimestamp])); //для начала сойдет :)
             if ( $addSuccessful ) {
                 $billStatus = 5;
                 $db->setBillStatus($billNum, $billStatus);
