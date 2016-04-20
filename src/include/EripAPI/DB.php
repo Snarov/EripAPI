@@ -427,6 +427,32 @@ class DB {
         return $bill;
     }
 
+     /**
+     * Возвращает id пользователя, который является владельцем счета с номером $billNum
+     *
+     * @param integer $billNum
+     * @return integer id пользователя. В случае ошибки или несуществования счета возвращается null
+    */
+    public function getBillUser($billNum) {
+        global $logger;
+        
+        try {
+            $stmt = $this->db->prepare('SELECT user FROM bills WHERE id = ?');
+            $stmt->bind_param('i', $billNum);
+            $stmt->execute();
+            $stmt->bind_result($billUser);
+            $stmt->fetch();
+
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+        
+        return $billUser;
+    }
+    
     /**
      * Возвращает значение поля status счета с указанным номером
      *
@@ -526,22 +552,23 @@ class DB {
     /**
      * Возвращает все записи из таблицы bills за указанный период и с указаными значениями( опционально )
      *
+     * @param integer $userId
      * @param integer $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
-     * @param integer $fromDatetime Начало периода (UNIX-время)
-     * @param integer $toDatetime Конец периода (UNIX-время)
+     * @param integer $fromTimestamp  Начало периода (UNIX-время)
+     * @param integer $toTimestamp  Конец периода (UNIX-время)
      * @param integer $status Код статуса
      *
      * @return Все строки, удовлетворяющие условиям
      */
-    public function getBills($eripID, $fromTimestamp , $toTimestamp, $status) {
+    public function getBills($userId, $eripID, $fromTimestamp , $toTimestamp, $status) {
         //части SQL-запроса для необязательных условий
         $optionalConditions = '';
         if ( null !== $eripID ) { $optionalConditions .= "AND erip_id = $eripID "; }
         if ( null !== $status ) { $optionalConditions .= "AND status = $status"; }
 
         try {
-            $stmt = $this->db->prepare('SELECT * FROM bills WHERE timestamp BETWEEN ? AND ? ' . $optionalConditions);
-            $stmt->bind_param('ii', $fromTimestamp, $toTimestamp);
+            $stmt = $this->db->prepare('SELECT * FROM bills WHERE timestamp BETWEEN ? AND ? AND user = ?' . $optionalConditions);
+            $stmt->bind_param('iii', $fromTimestamp, $toTimestamp, $userId);
             $stmt->execute();
             $bills = $this->fetch($stmt);
 
@@ -630,22 +657,23 @@ class DB {
     /**
      * Возвращает все записи из таблицы payments за указанный период и с указаными значениями ( опционально )
      *
+     * @param integer $userId 
      * @param integer $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
-     * @param integer $fromDatetime Начало периода (UNIX-время)
-     * @param integer $toDatetime Конец периода (UNIX-время)
+     * @param integer $fromTimestamp  Начало периода (UNIX-время)
+     * @param integer $toTimestamp  Конец периода (UNIX-время)
      * @param integer $status Код статуса
      *
      * @return Все строки, удовлетворяющие условиям
      */
-    public function getPayments($eripID, $fromTimestamp , $toTimestamp, $status) {
+    public function getPayments($userId, $eripID, $fromTimestamp , $toTimestamp, $status) {
         //части SQL-запроса для необязательных условий
         $optionalConditions = '';
         if ( null !== $eripID ) { $optionalConditions .= "AND erip_id = $eripID "; }
         if ( null !== $status ) { $optionalConditions .= "AND status = $status"; }
 
         try {
-            $stmt = $this->db->prepare('SELECT P.*, B.erip_id, B.personal_acc_num FROM payments P JOIN bills B ON P.bill = B.id WHERE timestamp BETWEEN ? AND ? ' . $optionalConditions);
-            $stmt->bind_param('ii', $fromTimestamp, $toTimestamp);
+            $stmt = $this->db->prepare('SELECT P.*, B.erip_id, B.personal_acc_num FROM payments P JOIN bills B ON P.bill = B.id WHERE timestamp BETWEEN ? AND ? AND B.user = ?' . $optionalConditions);
+            $stmt->bind_param('iii', $fromTimestamp, $toTimestamp, $userId);
             $stmt->execute();
             $payments = $this->fetch($stmt);
 

@@ -70,7 +70,7 @@ class EripAPI implements IEripAPI {
      * Получить информацию о счете
      *
      * @param $billNum Номер счета
-     * @return array Информация о счете или null если счета с таким номером не существует
+     * @return array Информация о счете или null, если счета с таким номером не существует у данного пользователя
      */
     function getBill($billNum){
         ParamsChecker::billNumCheck($billNum);
@@ -79,6 +79,10 @@ class EripAPI implements IEripAPI {
         if ( ! $db ) {
             $logger->write('error', 'Ошибка: невозможно подключиться к БД');
             throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        if ( $db->getBillUser($billNum) !== $this->userId ) {
+            return null;
         }
 
         $rawBillDetails = $db->getBill($billNum);
@@ -116,6 +120,10 @@ class EripAPI implements IEripAPI {
             throw APIInternalError(API_INTERNAL_ERR_MSG);
         }
 
+        if ( $db->getBillUser($billNum) !== $this->userId ) {
+            return null;
+        }
+
         return $db->getBillStatus($billNum) ;
     }
 
@@ -134,6 +142,10 @@ class EripAPI implements IEripAPI {
         if ( ! $db ) {
             $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
             throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        if ( $db->getBillUser($billNum) !== $this->userId ) {
+            return false;
         }
 
         $ftpConnectionData = $db->getFtpConnectionData($this->userId);
@@ -161,6 +173,7 @@ class EripAPI implements IEripAPI {
      * @param int $toTimestamp Конец периода (UNIX-время)
      * @param int $status Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен). Если не указан, то будут возвращены все счета,
      * вне зависимости от их текущего статуса
+     *
      * @return array Список счетов 
      */
     function getBills( $eripID = null, $fromTimestamp = '', $toTimestamp = '', $status = null) {
@@ -181,7 +194,7 @@ class EripAPI implements IEripAPI {
             $toTomestamp = time(); //устанавливается равным настоящему моменту
         }
 
-        $rawBillsDetails = $db->getBills($eripID, $fromTimestamp, $toTimestamp, $status);
+        $rawBillsDetails = $db->getBills($this->userId, $eripID, $fromTimestamp, $toTimestamp, $status);
         
         if ( empty ($rawBillsDetails) ) {
             return null;
@@ -225,6 +238,10 @@ class EripAPI implements IEripAPI {
         if ( ! $db ) {
             $logger->write('error', __METHOD__ . ': Ошибка: невозможно подключиться к БД');
             throw APIInternalError(API_INTERNAL_ERR_MSG);
+        }
+
+        if ( $db->getBillUser($billNum) !== $this->userId ) {
+            return null;
         }
 
         $rawPaymentDetails = $db->getPayment($billNum);
@@ -288,7 +305,7 @@ class EripAPI implements IEripAPI {
             $toTomestamp = time(); //устанавливается равным настоящему моменту
         }
 
-        $rawPaymentsDetails = $db->getBills($eripID, $fromTimestamp, $toTimestamp, $status);
+        $rawPaymentsDetails = $db->getPaymets($this->userId, $eripID, $fromTimestamp, $toTimestamp, $status);
         
         if ( empty ($rawPaymentsDetails) ) {
             return null;

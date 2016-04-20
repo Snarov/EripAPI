@@ -36,6 +36,7 @@ class ERIPMessageIO {
     * @param int $currencyCode  Код валюты требований к оплате 
     * @param array ERIPCredentials $eripCredentials Данные производителя услуг в системе ЕРИП.
     * @param object $info Дополнительная инорфмация о платеже
+    *
     * @return boolean true в случае успешной отправки сообщения, иначе - false.
     */
     public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info){
