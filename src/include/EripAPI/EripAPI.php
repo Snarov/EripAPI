@@ -3,10 +3,10 @@
 require __DIR__ . '/IEripAPI.php';
 require __DIR__ . '/Security.php';
 require __DIR__ . '/ParamsChecker.php';
-require __DIR__ . '/ERIPMessageManager.php';
+require __DIR__ . '/ERIPMessageIO.php';
 
 use EripAPI\ParamsChecker as ParamsChecker;
-use EripAPI\ERIPMessageManager as MessageManager;
+use EripAPI\ERIPMessageIO as MessageIO;
 
 class APIInternalError extends Exception{};
 
@@ -50,7 +50,7 @@ class EripAPI implements IEripAPI {
        }
 
        extract($ftpConnectionData);
-       $msgManager = new MessageManager($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
+       $msgManager = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
        if ( ! $msgManager->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $info) ) {
            $logger->write('error', 'Ошибка создания сообщения 202: ошибка отправки файла сообщения на ftp-сервер ЕРИП');
            throw APIInternalError(API_INTERNAL_ERR_MSG);
@@ -141,7 +141,7 @@ class EripAPI implements IEripAPI {
         }
 
         extract($ftpConnectionData);
-        $msgManager = new MessageManager($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
+        $msgManager = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
 
         if ( $msgManager->deleteInMessage("$billNum.202") && $db->deleteBill($billNum) ) {
             return true;

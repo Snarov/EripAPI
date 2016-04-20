@@ -8,12 +8,19 @@ class DB {
     const  DEFAULT_CONF_PATH = API_ROOT_DIR . '/etc/db.php';
     
     private $db;
+    /**
+     * Массив, содержищий список имен столбцов для каждой таблицы. Имена таблиц являются ключами, а массив имен столбцов является значением
+     *
+     * @access private
+     * @var array
+     */
+    private $tableColumns = array(); 
 
     public function __construct($confPath = '') {
         $confPath = ! empty($confPath) ? $confPath : self::DEFAULT_CONF_PATH;
         require $confPath;
 
-        mysqli_report(MYSQLI_REPORT_STRICT); 
+        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         $this->db = new mysqli($DBHost, $DBUser, $DBPassword, $DBName);
     }
 
@@ -139,7 +146,7 @@ class DB {
         $result = $this->db->query("SELECT auto_increment FROM information_schema.tables WHERE table_name = 'bills' AND table_schema = DATABASE( )");
         
         if ( $result ) {
-            return $result-fetch_assoc()['auto_increment'];
+            return $result->fetch_assoc()['auto_increment'];
         } else {
             return false;
         }
@@ -295,12 +302,114 @@ class DB {
     }
 
     /**
+     * Возвращает запись выполняемой операции c дополнительными полями
+     *
+     * @param integer $operationId
+     * @return array Данные операции или пустой массив, если операции с таким номером не существует
+     */
+    public function getRunningOperation($operationId) {
+        try {
+            $stmt = $this->db->prepare('SELECT RO.*, U.name AS username, OT.name AS typename, OT.description FROM running_operations RO JOIN users U ON RO.owner = U.id' .
+                                       'JOIN operations_types OT ON OT.id = RO.type WHERE RO.id = ?');
+            $stmt->bind_param('i', $operationId);
+            $stmt->execute();
+            $operation = $this->fetch($stmt);
+
+            $stmt = $this->db->prepare('SELECT * FROM runops_custom_params WHERE operation = ?');
+            $stmt->bind_param('i', $operationId);
+            $stmt->execute();
+            $rawParams = $this->fetch($stmt);
+
+            $params = array();
+            foreach ( $rawParams as $rawParam ) {
+                $params[$rawParam['param_name']] = $rawParam['value'];
+            }
+            $operation['params'] = $params;
+
+            global $logger;
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+        
+        return $operation;
+    }
+
+    /**
+     * Возвращает набор записей выполняемых операций, соответстувующих условию, с параметрами.
+     *
+     * @param integer $userId
+     * @param integer $type
+     *
+     * @return array набор записей или пустой массив, если записей удовлетворяющих условию не найдено
+     */
+    public function getRunningOperations($userId, $type) {
+        global $logger;
+        
+        try {
+            $stmt = $this->db->prepare('SELECT * FROM running_operations WHERE owner = ? AND type = ?');
+            $stmt->bind_param('ii', $userId, $type);
+            $stmt->execute();
+            $operations = $this->fetch($stmt);
+
+            foreach ( $operations as &$operation ) {
+                $stmt = $this->db->prepare('SELECT * FROM runops_custom_params WHERE operation = ?');
+                $stmt->bind_param('i', $operation['id']);
+                $stmt->execute();
+                $rawParams = $this->fetch($stmt);
+
+                $params = array();
+                foreach ( $rawParams as $rawParam ) {
+                    $params[$rawParam['param_name']] = $rawParam['value'];
+                }
+                $operation['params'] = $params;
+            }
+            unset($operation);
+
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+
+        return $operations;
+    }
+
+    /**
+     * Возращает список id пользователей, которые являются владельцами хотя бы одной выполняемой операции
+     * 
+     * @return array пустой массив, если таких пользователей нету
+     */
+    public function getUsersWithRunningOperations() {
+        $userIds = array();
+
+        try {
+            $owners = $this->fetch($this->db->query('SELECT DISTINCT owner FROM running_operations'));
+            foreach ( $owners as $row ) {
+                $userIds[] = $row['owner'];
+            }
+            
+            global $logger;
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+        
+        return $userIds;
+    }
+    
+    /**
      * Возвращает данные из строки таблицы счетов
      *
      * @param integer $billNum
      * @return array Запись о счете или пустой массив, если счета с таким номером не существует
      */
-    public function getbill($billNum) {
+    public function getBill($billNum) {
         try {
             $stmt = $this->db->prepare('SELECT * FROM bills WHERE id = ?');
             $stmt->bind_param('i', $billNum);
@@ -341,6 +450,56 @@ class DB {
             $logger->write('error', $e);
         }  
         return $billStatus;
+    }
+
+    /**
+     * Задает значение поля status счета с указанным номером
+     *
+     * @param integer $billNum
+     * @param integer $status
+     *
+     * @return boolean true, если изменения успешно внесены, иначе - false
+    */
+    public function setBillStatus($billNum, $status) {
+        global $logger;
+        
+        try {
+            $stmt = $this->db->prepare('UPDATE bills SET status = ? WHERE id = ?');
+            $stmt->bind_param('ii', $status,  $billNum);
+            $setSuccessful = $stmt->execute();
+
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }  
+        return $setSuccessful;
+    }
+
+    /**
+     * Задает значение поля error_msg счета с указанным номером
+     *
+     * @param integer $billNum
+     * @param string $errMsg
+     *
+     * @return boolean true, если изменения успешно внесены, иначе - false
+    */
+    public function setBillError($billNum, $errMsg) {
+        global $logger;
+        
+        try {
+            $stmt = $this->db->prepare('UPDATE bills SET error_msg = ? WHERE id = ?');
+            $stmt->bind_param('si', $errMsg, $billNum);
+            $setSuccessful = $stmt->execute();
+
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }  
+        return $setSuccessful;
     }
 
     /**
@@ -421,6 +580,54 @@ class DB {
     }
 
     /**
+     * Обновляет запись об оплате счета с номером $billNum. Создает запись, если таковой не существует
+     *
+     * @param $billNum
+     * @param array $data обновленные значения полей.
+     *
+     * @return boolean true, если изменения успешно внесены, иначе - false
+     */
+    public function updatePayment($billNum, $data) {
+        global $logger;
+        
+        try {
+            $paymentExists = $this->fetch($this->db->query("SELECT EXISTS (SELECT * FROM payments WHERE bill = $billNum)"));
+            if ( $paymentExists[0] == true ) {
+                 //создаем часть SQL-запроса для изменения столбцов, используя данные массива $data.в
+                $setPart = '';
+                foreach ( $data as $name => $value ) {
+                    if ( $this->columnExists('payments', $name) ) {
+                        $setPart .= "$name = $value";
+                        if ( end(array_keys($data)) !== $name ) {
+                            $setPart .= ', ';
+                        }
+                    }
+                }
+                
+                $successful = $this->db->query("UPDATE payments SET $setPart WHERE bill = $billNum");
+            } else {
+                //создаем части SQL-запроса для заполнения столбцов, используя данные массива $data. Здесь задаются значения как для обязательных, так и необязательных столбцов
+                $fields = '';
+                $values = '';
+                foreach ( $data as $name => $value ) {
+                    if ( $this->columnExists('payments', $name) ) {
+                        $fields .= ", $name";
+                        $values .= ", $value";
+                    }
+                }
+                //здесь задаются значения для столбцов, значение которых требует некоторой обработки перед встаывкой в таблицу
+                $stmt = $this->db->prepare("INSERT INTO payments (bill, erip_op_num, payment_timestamp $fields) VALUES (?, ?, ? $values)"); 
+                $stmt->bind_param('iii', $billNum, $data['central_node_op_num'], strtotime($data['payment_datetime']));
+                $successful = $stmt->execute();
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+
+        return $successful;
+    }
+    
+    /**
      * Возвращает все записи из таблицы payments за указанный период и с указаными значениями ( опционально )
      *
      * @param integer $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
@@ -451,7 +658,78 @@ class DB {
 
         return $payments;
     }
-    
+
+    /**
+     * Завершает выполняемую операцию, удаляя запись о ней из таблицы running_operations и помещая ее в архив операций
+     *
+     * @params integer $operationId
+     * @params boolean $endStatus
+     * @params string $additionalInfo
+     *
+     * @return boolean true, если изменения успешно внесены, иначе - false. Если не удалось добавить операцию в историю операций, то все равно будет возвращено true
+     */
+    public function finishOperation($operationId, $endStatus = true, $additionalInfo = null) {
+        global $logger;
+        
+        $operation = $this->getRunningOperation($operationId);
+        if ( empty($operation) ) {
+            return false;
+        }
+        
+        try {
+            $deleteSuccessful = $this->db->query("DELETE FROM running_operations WHERE id = $operationId");
+            if ( ! $deleteSuccessful ) {
+                return false;
+            }
+
+            $stmt = $this->db->prepare('INSERT INTO operations_history (username, operation_type_name, operation_desc, start_timestamp, end_timestamp, end_status, additional_info)' .
+                                       'VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $stmt->bind_param('sssiiis', $operation['username'], $operation['typename'], $operation['descsription'], $operation['start_timestamp'], time(), $endStatus, $additionalInfo);
+            $successfulArchive = $stmt->execute();
+            if ( ! $successfulArchive ) {
+                $logger->write('error', "Не удалось добавить операцию с номером {$operation['id']} в историю операций");
+            }
+            
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }  
+
+        return true;
+    }
+
+    /**
+     * Проверяет, существует ли в таблице с именем $tableName столбец $columnName
+     *
+     * @param string $tableName
+     * @param string $columnName
+     *
+     * @return boolean true, если столбец существует, false, если не существует. В случае ошибки возвращается -1
+     */
+    private function columnExists($tableName, $columnName) {
+        global $logger;
+
+        if ( ! array_key_exists($tableName, $this->tableColumns) ) {
+            try {
+                $result = $this->fetch($this->db->query("SHOW COLUMNS FROM $tableName"));
+                if ( empty ($result) ) {
+                    return false;
+                }
+
+                $this->tableColumns[$tableName] = array();
+                foreach ( $result as $row ) {
+                    $this->tableColumns[$tableName][] = $row['Field'];
+                }
+            } catch (mysqli_sql_exception $e) {
+                $logger->write('error', $e);
+                return -1;
+            }  
+        }
+
+        return in_array($columnName, $this->tableColumns);
+    }
     /**
      * Разворачивает результат запроса и помещает значения столбцов в массив
      *

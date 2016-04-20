@@ -5,16 +5,24 @@ namespace EripAPI;
 /**
 * Класс, который служит для управления (создания, чтения, удаления ) сообщениями ЕРИП на FTP сервере ЕРИП
 */
-class ERIPMessageManager {
+class ERIPMessageIO {
 
     const MSG_VERSION = '5';
     const ENTRY_TYPE = '2';
     const DELIMITER = '^';
 
     private $ftpRoot;
+    private $ftpServAddr;
+    private $ftpUser;
+    private $ftpPassword;
+    
     private $deletionBuffer = array(); //хранит удаленные файлы для того чтобы их можно было восстановить в дальнейшем с помощью соотв. методов
 
     public function __construct($ftpServAddr, $ftpUser, $ftpPassword) {
+        $this->$ftpServAddr = $ftpServAddr;
+        $this->$ftpUser;
+        $this->ftpPassword;
+        
         $this->ftpRoot = "ftp://$ftpUser:$ftpPassword@$ftpServAddr";
     }
 
@@ -121,8 +129,8 @@ class ERIPMessageManager {
                                                     'entry_num',
                                                     'erip_id',
                                                     'account_num',
-                                                    'fullname',
-                                                    'address',
+                                                    'customer_fullname',
+                                                    'customer_address',
                                                     'period',
                                                     'amount',
                                                     'fine_amount',
@@ -143,8 +151,8 @@ class ERIPMessageManager {
                                                     'entry_num',
                                                     'erip_id',
                                                     'account_num',
-                                                    'fullname',
-                                                    'address',
+                                                    'customer_fullname',
+                                                    'customer_address',
                                                     'period',
                                                     'amount',
                                                     'fine_amount',
@@ -179,7 +187,7 @@ class ERIPMessageManager {
             $body[$i - 1] = array_combine($bodyKeys, $bodyValues);
         } 
 
-        $message = array( 'header' => $header, 'body' => $body);
+        $message = array( 'header' => $header, 'body' => $body, 'type' => $msgType);
         return message;
     }
 
@@ -231,6 +239,16 @@ class ERIPMessageManager {
             $logger->write('error', __METHOD__ . ': Ошибка восстановления удаленного файла: не удается произвести запись в файл');
             return false;
         }
+    }
+
+     /**
+     * Опрашивает ftp-сервер и возвращает список всех новых файлов в ftp-папке пользователя, появившихся с момента последнего опроса, если таковые имеются
+     *
+     * @param integer $userId
+     * @return array Список файлов или пустой массив, если новых файлов не появлялось
+     */
+    public function  getNewFilesList() {
+        //TODO реализовать функцию, основываясь на ифнормации о ftp-сервере
     }
 
     /**

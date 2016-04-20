@@ -33,6 +33,7 @@ try {
     
     $server->attachException( 'EripAPI\HMACException' );
     $server->attachException( 'EripAPI\MsgTimeException' );
+    //TODO зарегистрировать исключения
     
     $eripAPI = new EripAPI;
     
