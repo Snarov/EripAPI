@@ -170,7 +170,7 @@ class Server
      * @access public
      * @return string
      */
-     public function getPaylod()
+     public function getPayload()
      {
         return $this->payload;
      }

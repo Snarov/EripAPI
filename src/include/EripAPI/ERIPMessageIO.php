@@ -19,9 +19,9 @@ class ERIPMessageIO {
     private $deletionBuffer = array(); //хранит удаленные файлы для того чтобы их можно было восстановить в дальнейшем с помощью соотв. методов
 
     public function __construct($ftpServAddr, $ftpUser, $ftpPassword) {
-        $this->$ftpServAddr = $ftpServAddr;
-        $this->$ftpUser;
-        $this->ftpPassword;
+        $this->ftpServAddr = $ftpServAddr;
+        $this->ftpUser = $ftpUser;
+        $this->ftpPassword = $ftpPassword;
         
         $this->ftpRoot = "ftp://$ftpUser:$ftpPassword@$ftpServAddr";
     }
@@ -40,11 +40,13 @@ class ERIPMessageIO {
     * @return boolean true в случае успешной отправки сообщения, иначе - false.
     */
     public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info){
+        global $logger;
+        
         $msgDatetime = date('YmdHis', $msgTimestamp);
         
         $header = self::MSG_VERSION . self::DELIMITER . $eripCredentials['subcriber_code'] . self::DELIMITER .
                     $msgNum . self::DELIMITER . $msgDatetime . self::DELIMITER . '1' .self::DELIMITER .
-                    $eripCredentials['unp'] . self::DELIMITER . $eripCredentials-['bank_code'] . self::DELIMITER .
+                    $eripCredentials['unp'] . self::DELIMITER . $eripCredentials['bank_code'] . self::DELIMITER .
                     $eripCredentials['account_num'] . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
                     self::DELIMITER;
 
@@ -56,7 +58,9 @@ class ERIPMessageIO {
 
         $msgContent = iconv('UTF-8', 'CP1251', $header . PHP_EOL . $body);
 
-        return file_put_contents("$ftpRoot/$msgNum.202", $msgContent) > 0;
+        $logger->write('debug', "$ftpRoot/in/$msgNum.202");
+        $logger->write('debug', $msgContent);
+        return file_put_contents("{$this->ftpRoot}/in/$msgNum.202", $msgContent) > 0;
     }
 
     /**

@@ -25,7 +25,7 @@ class DB {
     }
 
     public function __destruct() {
-        $db->close();
+        $this->db->close();
     }
 
     /**
@@ -91,12 +91,13 @@ class DB {
      * TODO добавить больше параметров
      *
      */
-    public function addUser($username, $password, $secretKey){
+    public function addUser($username, $password, $secretKey) {
+        global $logger;
+        
         try {
-            $stmt = $this->db->prepare('INSERT INTO users (name, password, secret_key, erip_requisites) VALUES (?, ?, ?, 1)');
+            $stmt = $this->db->prepare('INSERT INTO users (name, password, secret_key1) VALUES (?, ?, ?)');
             $stmt->bind_param('sss', $username, $password, $secretKey);
-
-            global $logger;
+            
             if ( $stmt->execute() ) {
                 return true;
             } else {
@@ -134,7 +135,7 @@ class DB {
             $logger->write('error', $e);
         }
         
-        return $secretKey;
+        return $userId;
     }
 
     /**
@@ -159,15 +160,18 @@ class DB {
      * @return array Хост, имя пользователя и пароль. Пустой массив в случае ошибки
      */
     public function getFtpConnectionData($userId) {
+        global $logger;
+        
         $ftpConnectionData = array();
+        $logger->write('debug', $userId);
 
         try {
             $stmt = $this->db->prepare('SELECT ftp_host, ftp_user, ftp_password FROM erip_requisites WHERE user = ?');
             $stmt->bind_param('i', $userId);
             $stmt->execute();
             $ftpConnectionData = $this->fetch($stmt);
-
-            global $logger;
+            $logger->write('debug', var_export($ftpConnectionData, true));
+            
             if ($this->db->errno) {
                 $logger->write('error', $this->db-error);
             }
@@ -175,7 +179,7 @@ class DB {
             $logger->write('error', $e);
         }
         
-        return $ftpConnectionData;
+        return $ftpConnectionData[0];
     }
 
     /**
@@ -184,16 +188,18 @@ class DB {
      * @param integer $userId
      * @return array код абонента, УНП, код банка, номер банковского счет
      */
-    public function getEripCredentials($userid) {
+    public function getEripCredentials($userId) {
+        global $logger;
+        
         $eripCredentials = array();
 
         try {
             $stmt = $this->db->prepare('SELECT subscriber_code, unp, bank_code, bank_account FROM erip_requisites WHERE user = ?');
             $stmt->bind_param('i', $userId);
             $stmt->execute();
-            $ftpConnectionData = $this->fetch($stmt);
-
-            global $logger;
+            $eripCredentials = $this->fetch($stmt);
+            $logger->write('debug', var_export($eripCredentials, true));
+            
             if ($this->db->errno) {
                 $logger->write('error', $this->db-error);
             }
@@ -201,7 +207,7 @@ class DB {
             $logger->write('error', $e);
         }
         
-        return $eripCredentials;
+        return $eripCredentials[0];
     }
 
     /**
@@ -216,26 +222,27 @@ class DB {
      *
      * return boolean true в случае успешного добавления, иначе - false
      */
-    public function addBill($userId, $eripID, $personalAccNum, $amount, $currencyCode, $billTimestamp, array $info) {
+    public function addBill($userId, $eripID, $personalAccNum, $amount, $currencyCode, $billTimestamp, $info) {
+        global $logger;
         //создаем части SQL-запроса для заполнения необязательных столбцов, использую данные массива $info
         $optionalFields = '';
         $optionalValues = '';
-        if( ! empty ($info ) ) {
+        if( ! empty ( $info ) ) {
             if ( array_key_exists('customerFullname', $info) ) {
-                $optionalFields .= ', customer_fullname';
-                $optionalValues .= ", {$info['customer_fullname']}";
+                $optionalFields .= ', `customer_fullname`';
+                $optionalValues .= ", '{$info['customer_fullname']}'";
             }
             if ( array_key_exists('subscriberAddress', $info) ) {
-                $optionalFields .= ', subscriber_adress';
-                $optionalValues .= ", {$info['subscriber_address']}";
+                $optionalFields .= ', `subscriber_adress`';
+                $optionalValues .= ", '{$info['subscriber_address']}'";
             }
             if ( array_key_exists('additionalInfo', $info) ) {
-                $optionalFields .= ', additional_info';
-                $optionalValues .= ", {$info['additional_info']}";
+                $optionalFields .= ', `additional_info`';
+                $optionalValues .= ", '{$info['additional_info']}'";
             }
             if ( array_key_exists('additionalData', $info) ) {
-                $optionalFields .= ', additional_data';
-                $optionalValues .= ", {$info['additional_data']}";
+                $optionalFields .= ', `additional_data`';
+                $optionalValues .= ", '{$info['additional_data']}'";
             }
             if ( array_key_exists('meters', $info) ) {
                 //TODO развернуть массив meters
@@ -243,10 +250,10 @@ class DB {
         }
 
         try {
-            global $logger;
             
-            $query = "INSERT INTO bills (user, erip_id, personal_acc_num, amount, currency_code, timestamp $optionalFields)" .
-                   "VALUES ($userId, $eripID, $personalAccNum, $amount, $currencyCode, $billTimestamp $optionalValues)";
+            $query = "INSERT INTO bills (`user`, `erip_id`, `personal_acc_num`, `amount`, `currency_code`, `timestamp` $optionalFields) " .
+                   "VALUES ('$userId', '$eripID', '$personalAccNum', '$amount', '$currencyCode', FROM_UNIXTIME('$billTimestamp') $optionalValues)";
+            $logger->write('debug', $query);
             if ( $this->db->query($query) ) {
                 return true;
             } else {
@@ -269,7 +276,7 @@ class DB {
      *
      * @return boolean true, если операция добавлена успешно, иначе - false
      */
-    public function addRunningOperation($userId, $operationTypeIndex, array $operationParams = null) {
+    public function addRunningOperation($userId, $type, array $operationParams = null) {
         try {
             $stmt = $this->db->prepare('INSERT INTO running_operations (owner, type) VALUES (?, ?)');
             $stmt->bind_param('ii', $userId, $type);
@@ -424,7 +431,7 @@ class DB {
             $logger->write('error', $e);
         }
         
-        return $bill;
+        return $bill[0];
     }
 
      /**
@@ -561,13 +568,14 @@ class DB {
      * @return Все строки, удовлетворяющие условиям
      */
     public function getBills($userId, $eripID, $fromTimestamp , $toTimestamp, $status) {
+        global $logger;
         //части SQL-запроса для необязательных условий
         $optionalConditions = '';
         if ( null !== $eripID ) { $optionalConditions .= "AND erip_id = $eripID "; }
         if ( null !== $status ) { $optionalConditions .= "AND status = $status"; }
 
         try {
-            $stmt = $this->db->prepare('SELECT * FROM bills WHERE timestamp BETWEEN ? AND ? AND user = ?' . $optionalConditions);
+            $stmt = $this->db->prepare('SELECT * FROM bills WHERE timestamp BETWEEN FROM_UNIXTIME(?) AND FROM_UNIXTIME(?) AND user = ? ' . $optionalConditions);
             $stmt->bind_param('iii', $fromTimestamp, $toTimestamp, $userId);
             $stmt->execute();
             $bills = $this->fetch($stmt);
@@ -582,6 +590,28 @@ class DB {
         return $bills;
     }
 
+    /**
+     * Проверяет существует ли счет с указанным номером
+     *
+     * @param integer $billNum
+     * @return boolean true, если счет существует, иначе - false
+     */
+    public function  billExists($billNum) {
+         global $logger;
+        
+        try {
+           $billExists = $this->fetch($this->db->query("SELECT EXISTS (SELECT * FROM bills WHERE id = $billNum)"));
+
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+        
+        return $billExists[0][key($billExists[0])] == true;
+    }
+    
     /**
      * Возвращает информацию по платежу
      *
@@ -607,6 +637,42 @@ class DB {
     }
 
     /**
+     * Возвращает id платежа с указанными параметрами. Если платежей, удовлетворяющих условиям несколько (вообще такого быть не должно) - то будет возвращен id первого обнаруженного 
+     *
+     * @param array $params параметры, которым должен соответствовать искомый платеж
+     * @return integer id платежа или false, если платежа удовлетворяющего данным параметрам не существует
+     */
+    public function getPaymentIdWithParams(array $params) {
+        global $logger;
+        
+        //создаем условную часть SQL-запроса
+        $whereClause = '';
+        foreach ( $params as $name => $value ) {
+            if ( $this->columnExists('payments', $name) ) {
+                $whereClause .= "$name = $value";
+                if ( end(array_keys($params)) !== $name ) {
+                    $whereClause .= ', AND';
+                }
+            }
+        }
+        
+        try {
+            $payment = $this->fetch($this->db->query("SELECT id FROM payments WHERE $whereClause"));
+            if ($this->db->errno) {
+                $logger->write('error', $this->db-error);
+            }
+            
+            if ( empty ($payment) ) {
+                return false;
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+        
+        return $payment[0]['id'];
+    }
+
+    /**
      * Обновляет запись об оплате счета с номером $billNum. Создает запись, если таковой не существует
      *
      * @param $billNum
@@ -614,13 +680,13 @@ class DB {
      *
      * @return boolean true, если изменения успешно внесены, иначе - false
      */
-    public function updatePayment($billNum, $data) {
+    public function updatePaymentOnBill($billNum, $data) {
         global $logger;
         
         try {
             $paymentExists = $this->fetch($this->db->query("SELECT EXISTS (SELECT * FROM payments WHERE bill = $billNum)"));
-            if ( $paymentExists[0] == true ) {
-                 //создаем часть SQL-запроса для изменения столбцов, используя данные массива $data.в
+            if ( $paymentExists[0][key($paymentExists[0])] == true ) {
+                //создаем часть SQL-запроса для изменения столбцов, используя данные массива $data.
                 $setPart = '';
                 foreach ( $data as $name => $value ) {
                     if ( $this->columnExists('payments', $name) ) {
@@ -645,6 +711,53 @@ class DB {
                 //здесь задаются значения для столбцов, значение которых требует некоторой обработки перед встаывкой в таблицу
                 $stmt = $this->db->prepare("INSERT INTO payments (bill, erip_op_num, payment_timestamp $fields) VALUES (?, ?, ? $values)"); 
                 $stmt->bind_param('iii', $billNum, $data['central_node_op_num'], strtotime($data['payment_datetime']));
+                $successful = $stmt->execute();
+            }
+        } catch (mysqli_sql_exception $e) {
+            $logger->write('error', $e);
+        }
+
+        return $successful;
+    }
+
+     /**
+     * Обновляет запись об оплате счета с номером $billNum. Создает запись, если таковой не существует
+     *
+     * @param $billNum
+     * @param array $data обновленные значения полей.
+     *
+     * @return boolean true, если изменения успешно внесены, иначе - false
+     */
+    public function updatePayment($paymentNum, $data) {
+        global $logger;
+        
+        try {
+            if ( $paymentNum !== null ) {
+                //создаем часть SQL-запроса для изменения столбцов, используя данные массива $data.
+                $setPart = '';
+                foreach ( $data as $name => $value ) {
+                    if ( $this->columnExists('payments', $name) ) {
+                        $setPart .= "$name = $value";
+                        if ( end(array_keys($data)) !== $name ) {
+                            $setPart .= ', ';
+                        }
+                    }
+                }
+                
+                $successful = $this->db->query("UPDATE payments SET $setPart WHERE paymentNum = $paymentNum");
+            } else {
+                //создаем части SQL-запроса для заполнения столбцов, используя данные массива $data. Здесь задаются значения как для обязательных, так и необязательных столбцов
+                $fields = '';
+                $values = '';
+                foreach ( $data as $name => $value ) {
+                    if ( $this->columnExists('payments', $name) ) {
+                        $fields .= ", $name";
+                        $values .= ", $value";
+                    }
+                }
+                //здесь задаются значения для столбцов, значение которых требует некоторой обработки перед встаывкой в таблицу
+                $stmt = $this->db->prepare("INSERT INTO payments ( erip_op_num, payment_timestamp $fields) VALUES ( ?, FROM_UNIXTIME(?) $values)"); 
+                $stmt->bind_param('ii', $data['central_node_op_num'], strtotime($data['payment_datetime']));
                 $successful = $stmt->execute();
             }
         } catch (mysqli_sql_exception $e) {

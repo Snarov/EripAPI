@@ -19,6 +19,28 @@ $logger->addLog(array('debug'), API_ROOT_DIR . '/../log/debug.log');
 // var_dump($logger->write('error', 'huj'));
 // var_dump(ini_get('error_log'));
 
+/**
+ * Generate a random string, using a cryptographically secure 
+ * pseudorandom number generator (random_int)
+ * 
+ * For PHP 7, random_int is a PHP core function
+ * For PHP 5.x, depends on https://github.com/paragonie/random_compat
+ * 
+ * @param int $length      How many characters do we want?
+ * @param string $keyspace A string of all possible characters
+ *                         to select from
+ * @return string
+ */
+function random_str($length, $keyspace = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+{
+    $str = '';
+    $max = mb_strlen($keyspace, '8bit') - 1;
+    for ($i = 0; $i < $length; ++$i) {
+        $str .= $keyspace[random_int(0, $max)];
+    }
+    return $str;
+}
+
 //связывает имена действий с функциями, которые выполняются для этих действий. А-ля "массив функций"
 $actions = array (
     'adduser' => function() use ($params) {
@@ -26,10 +48,10 @@ $actions = array (
         global $logger;
         
         $username = $params->username;
-        $password = bin2hex(openssl_random_pseudo_bytes(PASSWORD_DEFAULT_LEN, $passStrong));
+        $password = random_str(10);
         $secretKey = bin2hex(openssl_random_pseudo_bytes(SECRET_KEY_LEN, $keyStrong));
 
-        if ( $passStrong && $keyStrong ) {
+        if ( $keyStrong ) {
            $passwordHash = password_hash($password, PASSWORD_BCRYPT);
 
            require_once __DIR__ . '/include/EripAPI/DB.php';

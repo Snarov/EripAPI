@@ -32,7 +32,7 @@ abstract class ParamsChecker {
         if ( preg_match( self::ERIP_ID_REGEX, $eripID ) !== 1 ) {
             $errMsg .= "'eripID' must be an eight-digit number" . PHP_EOL;
         }
-        if ( preg_match(self::PERSONAL_ACC_NUM, $personalAccNum) !== 1 ) {
+        if ( preg_match(self::PERSONAL_ACC_NUM_REGEX, $personalAccNum) !== 1 ) {
             $errMsg .= "'personalAccNum' must be not empty and its maximum length is 30 characters" . PHP_EOL;
         }
         if ( ! is_numeric($amount) || $amount <= 0 ) {
@@ -40,6 +40,9 @@ abstract class ParamsChecker {
         }
         if ( preg_match(self::CURRENCY_CODE_REGEX, $currencyCode) !== 1 ) {
             $errMsg .= "'currencyCode' must contain from 1 to 3 digits" . PHP_EOL;
+        }
+        if ( $callbackURL !== null && filter_var($callbackURL, FILTER_VALIDATE_URL) === false ) {
+            $errMsg .="'callbackURL' must be valid URL" . PHP_EOL;
         }
         //TODO добавить проверку необязательных параметров
 
@@ -53,7 +56,7 @@ abstract class ParamsChecker {
     *
     * @param int $billNum
     */
-    static function billNumCheck($billnum) {
+    static function billNumCheck($billNum) {
         if ( ! is_numeric($billNum) || $billNum <= 0 ) {
             throw new InvalidParamValueException( 'Invalid parameter value:' . PHP_EOL . "'billNum' must be a positive number", -32002);
         }
@@ -82,14 +85,21 @@ abstract class ParamsChecker {
         if (  null !== $eripID && preg_match( self::ERIP_ID_REGEX, $eripID ) !== 1 ) {
             $errMsg .= "'eripID' must be an eight-digit number" . PHP_EOL;
         }
+
+        if ( '' !== $fromTimestamp ) {
+            $fromTimestamp = strtotime($fromTimestamp);
+        }
+        if ( '' !== $toTimestamp ) {
+            $toTimestamp = strtotime($toTimestamp);
+        }
         
-        if (  '' !== $fromTimestamp && ( is_numeric($fromTimestamp) || $fromTimestamp < 0 ) ) {
-            $errMsg .= "'fromTimestamp' must be non-negative number" . PHP_EOL;
+        if (  '' !== $fromTimestamp && ( ! is_numeric($fromTimestamp) || $fromTimestamp < 0 ) ) {
+            $errMsg .= "'fromTimestamp' value is invalid. It must be a date in format YYYYMMDDHHMMSS" . PHP_EOL;
         }
-        if (  '' !== $toTimestamp && ( is_numeric($toTimestamp) || $tofromTimestamp < 0 ) ) {
-            $errMsg .= "'toTimestamp' must be non-negative number" . PHP_EOL;
+        if (  '' !== $toTimestamp && ( ! is_numeric($toTimestamp) || $tofromTimestamp < 0 ) ) {
+            $errMsg .= "'toTimestamp' value is invalid. It must be a date in format YYYYMMDDHHMMS" . PHP_EOL;
         }
-        if ( '' !== $fromTimestamp && '' !== $toTimestamp &&  $toTimestamp <= $fromTimestamp ) {
+        if ( ! empty($fromTimestamp) && ! empty($toTimestamp) &&  $toTimestamp <= $fromTimestamp ) {
             $errMsg .= "'toTimestamp' must be greater than 'fromTimestamp'" . PHP_EOL;
         }
         

@@ -34,30 +34,38 @@ class EripAPI implements IEripAPI {
        $ftpConnectionData = $db->getFtpConnectionData($this->userId);
        $msgNum = $db->getNextBillNum();
        if (  empty($ftpConnectionData) ||  empty($msgNum) ) {
-           $logger->write('error', 'Ошибка создания сообщения 202: данные из БД не получены');
-           throw APIInternalError(API_INTERNAL_ERR_MSG);
+           $logger->write('error', 'Ошибка создания сообщения 202: данные не получены');
+           throw new APIInternalError(API_INTERNAL_ERROR_MSG);
        }
 
-       $eripCredentials = $db->getEripCredentials($userId);
+       $eripCredentials = $db->getEripCredentials($this->userId);
        if ( empty($eripCredentials) ) {
            $logger->write('error', 'Ошибка создания сообщения 202: данные об абоненте ЕРИП не получены');
-           throw APIInternalError(API_INTERNAL_ERR_MSG);
+           throw new APIInternalError(API_INTERNAL_ERROR_MSG);
        }
 
        $msgTimestamp = time();
        
        extract($ftpConnectionData);
-       $msgIO = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
-       if ( ! $msgIO->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info) ) {
-           $logger->write('error', 'Ошибка создания сообщения 202: ошибка отправки файла сообщения на ftp-сервер ЕРИП');
-           throw APIInternalError(API_INTERNAL_ERR_MSG);
-       }
        
-       $db->addBill($this->userId,  $eripID, $personalAccNum, $amount, $currencyCode, $msgTimestamp, $info);
-       if ( filter_var($callbackURL, FILTER_VALIDATE_URL) !== false ) {
-           $db->addRunningOperation($this->userId, 1, array('callbackURL' => $callbackURL));
+       if( ! $db->addBill($this->userId,  $eripID, $personalAccNum, $amount, $currencyCode, $msgTimestamp, $info) ) {
+           $logger->write('error', 'Ошибка создания сообщения 202: ошибка создания записи счета');
+           throw new APIInternalError(API_INTERNAL_ERROR_MSG);
        }
 
+       $msgIO = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
+       if ( ! $msgIO->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info) ) {
+           $db->deleteBill($msgNum);
+           $logger->write('error', 'Ошибка создания сообщения 202: ошибка отправки файла сообщения на ftp-сервер ЕРИП');
+           throw new APIInternalError(API_INTERNAL_ERROR_MSG);
+       }
+       
+       $params = array();
+       if ( $callbackURL ) {
+           $params['callbackURL'] = $callbackURL;
+       }
+       $db->addRunningOperation($this->userId, 1, $params);
+       
        return $msgNum;
     }
     
@@ -121,19 +129,24 @@ class EripAPI implements IEripAPI {
      * @return bool true в случае успешного удаления, иначе - false
      */
     function deleteBill( $billNum ) {
-        ParamsChecker::billNumCheck($billNum);
-
         global $logger;
         global $db;
+
+        ParamsChecker::billNumCheck($billNum);
+
+        if ( ! $db->billExists($billNum) ) {
+            return false;
+        }
 
         if ( $db->getBillUser($billNum) !== $this->userId ) {
             return false;
         }
 
+        $logger->write('debug', 'userid = ' . $this->userId);
         $ftpConnectionData = $db->getFtpConnectionData($this->userId);
         if (  empty($ftpConnectionData) ) {
            $logger->write('error', __METHOD__ . ': Ошибка: не удается получить данные, необходимые для установления ftp-соединения');
-           throw APIInternalError(API_INTERNAL_ERR_MSG);
+           throw new APIInternalError(API_INTERNAL_ERROR_MSG, -32003);
         }
 
         extract($ftpConnectionData);
@@ -166,9 +179,13 @@ class EripAPI implements IEripAPI {
         
         if ( '' === $fromTimestamp ) {
             $fromTimestamp = time() - 30 * 24 * 60 * 60; //устанавливается равным моменту, отстоящим на 30 дней назад.
+        } else {
+            $fromTimestamp = strtotime($fromTimestamp);
         }
         if ( '' === $toTimestamp ) {
-            $toTomestamp = time(); //устанавливается равным настоящему моменту
+            $toTimestamp = time(); //устанавливается равным настоящему моменту
+        } else {
+            $toTimestamp = strtotime($toTimestamp);
         }
 
         $rawBillsDetails = $db->getBills($this->userId, $eripID, $fromTimestamp, $toTimestamp, $status);

@@ -20,7 +20,7 @@ interface IEripAPI {
      * @param $billNum Номер счета
      * @return object billDetails
      */
-    function getBillDetails( $billNum );
+    function getBill($billNum);
 
     /**
      * Получить текущий статус счета

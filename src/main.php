@@ -17,6 +17,8 @@ $logger->addLog('debug', API_ROOT_DIR . '/../log/debug.log');
 $logger->addLog('access', API_ROOT_DIR . '/../log/access.log');
 $logger->debug(true);
 
+date_default_timezone_set('Europe/Minsk');
+
 try {
     $db = new DB;
     //передем серверу анонимную функцию, производящую аутентификацию пользователя
@@ -33,6 +35,8 @@ try {
     
     $server->attachException( 'EripAPI\HMACException' );
     $server->attachException( 'EripAPI\MsgTimeException' );
+    $server->attachException( 'APIInternalError' );
+    $server->attachException( 'EripAPI\InvalidParamValueException' );
     //TODO зарегистрировать исключения
     
     $eripAPI = new EripAPI;
@@ -40,12 +44,12 @@ try {
     $server->attach( $eripAPI );
     $server->before( function ($username, $password, $class, $method, $param) use ($db, $eripAPI) {
                          EripAPI\Security::verifyHMAC($username, $password, $class, $method, $param);
-                         $eripAPI->userId = $db->getIdByName($username);
+                         $eripAPI->userId = $db->getUserIdByName($username);
                        }
                    );
 
     $response = $server->execute();
-    return $response;
+    echo $response;
 } catch (Exception $e) {
     $logger->write('error', $e);
     $logger->write('main', 'Выполнение завершилось сбоем');
