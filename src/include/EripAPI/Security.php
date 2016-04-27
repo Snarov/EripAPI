@@ -48,8 +48,7 @@ abstract class Security {
         if ( isset( $msgTime ) && $msgTime > $currentTime - self::ALLOWED_TIME_DELTA / 2 &&  $msgTime < $currentTime + self::ALLOWED_TIME_DELTA ) {
             if ( ! empty( $params['hmac'] ) ) {
                 global $db;
-                $secretKey = $db->getUserSecretKey( $username );
-                // $secretKey = 'a8d50s0bp6rxkfwv2h5b01vv1thbvpbvkm5w98p3jlz0apd4eolz6lq2trzd204vpq9mg01g2wkwol7i2cncofhm0s32gfzn0kkobm7am6qu6tngptzb4iht4q7atpop';
+                $secretKey = $db->getUserSecretKey( $db->getUserIdByName($username) );
                 $hmacText = '';
 
                 $reflection = new \ReflectionMethod( $class, $method );

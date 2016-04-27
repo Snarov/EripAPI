@@ -61,13 +61,13 @@ class DB {
      * @param string $username
      * @return string
      */
-    public function getUserSecretKey($username) {
+    public function getUserSecretKey($userId) {
         global $logger;
         
         $secretKey = false;
         try {
-            $stmt = $this->db->prepare('SELECT secret_key FROM users WHERE name = ?');
-            $stmt->bind_param('s', $username);
+            $stmt = $this->db->prepare('SELECT secret_key FROM users WHERE id = ?');
+            $stmt->bind_param('i', $userId);
             $stmt->execute();
             $stmt->bind_result($secretKey);
             $stmt->fetch();

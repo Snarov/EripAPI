@@ -301,7 +301,7 @@ class ERIPMessageHandler {
     }
     
     /**
-     * Уведомляет клиента, вызывая предоставленный им callback
+     * Уведомляет клиента, вызывая предоставленный им callback. Метод берет на себя добавление HMAC к запросу
      *
      * @param string $url;
      * @param array $params
@@ -314,10 +314,22 @@ class ERIPMessageHandler {
             $logger->write('error', 'Ошибка запуска фоновой процедуры отправки уведомления клиенту: не удалось создать дочерний процесс');
         } else if ( $pid > 0 ) {
             //начало кода дочернего процесса
+            global $db;
+            
             $url .= '?';
             foreach ( $params as $key => $value ) {
                 $url .= "$key=$value&";
+                $hmacText .= $value;
             }
+            //добавляем временнУю метку и HMAC
+            $time = time();
+
+            $hmacText .= $time;
+            $secretKey = $db->getUserSecretKey($this->userId);
+            $hmac = hash_hmac( self::HMAC_ALG, $hmacText, $secretKey );
+            
+            $url .= "&time=$time&hmac=$hmac";
+            
 
             $getParams = ['timeout' => 5];
             for ( $tryCount = 0; $tryCount < 3; $tryCount++ ) {
