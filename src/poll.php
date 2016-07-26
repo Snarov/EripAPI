@@ -30,7 +30,7 @@ foreach ( $usersWithRunningOperations as $userId ) {
     extract($ftpConnectionData);
     $msgIO = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
 
-    $newFilesList = $msgManager->getNewFilesList();
+    $newFilesList = $msgIO->getNewFilesList();
     if ( empty ( $newFilesLists ) ) {
         continue;
     }

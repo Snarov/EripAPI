@@ -2,7 +2,7 @@
 
 /**
  * 
- * Класс, отвечающий за хранение и предоставление информации о параметрах выполнения сценария. Состояние экземпляра класса определяется параметрами командной строки.
+ * Класс, отвечающий за хранение и предоставление информации о параметрах выполнения сценария apictl. Состояние экземпляра класса определяется параметрами командной строки.
  * 
  * @property-read string $username
  */
@@ -11,7 +11,9 @@ class ScriptParams {
 	 * @var array
 	 */
 	const OPTIONS = array(
-        'u:' => 'adduser:'
+        'a:' => 'adduser:',
+        'u:' => 'user:',
+        'p:' => 'password:',
 	);
 	/**
 	 * @var help
@@ -21,8 +23,12 @@ class ScriptParams {
 
 Параметры:
 
---adduser; -u <имя пользователя>    Добавляет в базу нового пользователя с указанными именем.
---help; -h                          Показать это сообщение
+--adduser; -u <имя пользователя>        Добавляет в базу нового пользователя с указанными именем.
+
+--user; -u <имя пользователя>           Задает/изменяет пароль пользователя
+--password; -p <пароль> 
+
+--help; -h                              Показать это сообщение
 
 EOT;
 
@@ -35,17 +41,26 @@ EOT;
      * @var string
      */
     private $username;
+    private $password;
     
 	function __construct() {
         //здесь происходит разбор опций командной строки и установление состояния объекта
 		$params = getopt(implode('', array_keys(self::OPTIONS)), self::OPTIONS);
         
-        if ( ! empty($params['u'] ) ) {
-          $this->username = $params['u'];
+        if ( ! empty($params['a'] ) ) {
+          $this->username = $params['a'];
           $this->action = 'adduser';
         } else if ( ! empty($params['adduser'] ) ) {
           $this->username = $params['adduser'];
           $this->action = 'adduser';
+        } else if ( ! empty($params['u']) || ! empty($params['user']) ) {
+            $this->username = ! empty($params['u']) ? $params['u'] : $params['user'];
+            $this->password = ! empty($params['p']) ? $params['p'] : $params['password'];
+            if ( empty( $this->password ) ) {
+                $this->handleBadParams();
+            } else {
+                $this->action = 'chpass';
+            }
        } else {
           $this->handleBadParams();
        }

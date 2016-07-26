@@ -503,7 +503,7 @@ class Server
             return $this->getResponse(array(
                 'error' => array(
                     'code' => -32602,
-                    'message' => 'Invalid params'
+                    'message' => 'Invalid params. ' . $e->getMessage(),
                 )),
                 $this->payload
             );

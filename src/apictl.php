@@ -1,4 +1,4 @@
-#!/usr/bin/php
+#!/opt/lampp/bin/php
 <?php
 //скрипт для управления сервисом
 
@@ -8,6 +8,10 @@ define ('API_ROOT_DIR', __DIR__);
 
 include API_ROOT_DIR . '/include/util/ScriptParams.php';
 include __DIR__ . '/include/util/Logger.php';
+
+if ( ! function_exists('random_int') ) {    // для работы с php с версией ниже чем php7
+    include API_ROOT_DIR . '/../lib/random_compat/random_compat.phar';
+}
 
 define('PASSWORD_DEFAULT_LEN', 12);
 define('SECRET_KEY_LEN', 128);
@@ -44,7 +48,6 @@ function random_str($length, $keyspace = '0123456789abcdefghijklmnopqrstuvwxyzAB
 //связывает имена действий с функциями, которые выполняются для этих действий. А-ля "массив функций"
 $actions = array (
     'adduser' => function() use ($params) {
-
         global $logger;
         
         $username = $params->username;
@@ -54,7 +57,7 @@ $actions = array (
         if ( $keyStrong ) {
            $passwordHash = password_hash($password, PASSWORD_BCRYPT);
 
-           require_once __DIR__ . '/include/EripAPI/DB.php';
+           require_once API_ROOT_DIR . '/include/EripAPI/DB.php';
             $db = new DB;
             $userCreated =  $db->addUser($username, $passwordHash, $secretKey);
         } else {
@@ -69,6 +72,28 @@ $actions = array (
             exit ('Не удалось создать пользователя' . PHP_EOL);
         }
         
-    } );
+    },
+    
+    'chpass' => function() use ($params) {
+        global $logger;
+        
+        $username = $params->username;
+        $password = $params->password;
+        $passwordHash = password_hash($password, PASSWORD_BCRYPT);
+        
+        require_once API_ROOT_DIR . '/include/EripAPI/DB.php';
+        $db = new DB;
+        $passChanged = $db->changeUserPassword($username, $passwordHash);
+        
+        if( $passChanged ) {
+            $logger->write('main', 'Смена пароля пользователя' . $username);
+            echo "Пароль пользователя $username успешно изменен." . PHP_EOL;
+            exit(0);
+        } else {
+            exit ('Не удалось изменить пароль' . PHP_EOL);
+        }
+    },
+    
+    );
 
 $actions[$params->action]();

@@ -58,9 +58,7 @@ abstract class Security {
                     
                     if ( isset( $params[ $name ] ) ) {
                         $hmacText .= $params[ $name ];
-                    } else if ( ! $p->isDefaultValueAvailable() ) {
-                        throw new \InvalidArgumentException('Missing argument: '.$name);
-                    }
+                    } 
                 }
                 $hmacText .= $msgTime;
                  

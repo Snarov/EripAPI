@@ -2,6 +2,8 @@
 
 namespace EripAPI;
 
+include_once API_ROOT_DIR . '/include/util/Functions.php';
+
 /**
  * Класс, предоставляющий методы для обработки сообщений ЕРИП. Производит действия, который должны быть выполнены при появлении собщения какого-либо типа, например, сохраняет платеж в БД.
  * 
@@ -11,7 +13,7 @@ class ERIPMessageHandler {
 
     /**
      * Список выполняющихся операций пользователя, которые ждут обработки файлов (Операции типа "мониторинг статуса счета" и "мониторинг поступления нвоых платежей")
-     *
+     *2
      * @access private
      * @var array
      */
@@ -87,7 +89,7 @@ class ERIPMessageHandler {
     }
 
     /**
-     * Обрабатывает сообщение 206, в соответствии с операцией типа "мониторинг статуса счета" или "мониторинг поступления нвоых платежей".
+     * Обрабатывает сообщение 206, в соответствии с операцией типа "мониторинг статуса счета" или "мониторинг поступления новых платежей".
      *
      * @param array $message
      */
@@ -104,7 +106,7 @@ class ERIPMessageHandler {
                     $billStatus = 2;
                     $db->setBillStatus($billNum, $billStatus);
 
-                    $params = ['bill' => $billNum, 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
+                    $params = ['bill' => $billNum, 'account' => $paymentEntry['account_num'], 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
                     $url = $operation['params']['callback_url'];                    
                     $this->callbackNotify($url, $params);
                 } else {
@@ -114,7 +116,7 @@ class ERIPMessageHandler {
                 $addSuccessful = $db->updatePayment(null, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
                 $operation = $this->getUserPaymentMonitoringOperation();
                 if ( $addSuccessful && ! empty ($operation) ) {
-                    $params = ['status' => 1, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
+                    $params = ['account' => $paymentEntry['account_num'], 'status' => 1, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
                     $url = $operation['params']['callback_url'];
                     $this->callbackNotify($url, $params);
                 } else {
@@ -147,7 +149,7 @@ class ERIPMessageHandler {
                     $db->setBillStatus($billNum, $billStatus);
                     $db->finishOperation($operation['id']);
 
-                    $params = ['bill' => $billNum, 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
+                    $params = ['bill' => $billNum, 'account' => $paymentEntry['account_num'], 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
                     $url = $operation['params']['callback_url'];
                     $this->callbackNotify($url, $params);
                 } else {
@@ -163,7 +165,7 @@ class ERIPMessageHandler {
                 $updateSuccessful = $db->updatePayment($paymentId, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
                 $operation = $this->getUserPaymentMonitoringOperation();
                 if ( $updateSuccessful && ! empty ($operation) ) {
-                    $params = ['status' => 2, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
+                    $params = [ 'account' => $paymentEntry['account_num'], 'status' => 2, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
                     $url = $operation['params']['callback_url'];
                     $this->callbackNotify($url, $params);
                 } else {
@@ -197,7 +199,7 @@ class ERIPMessageHandler {
                     $db->setBillStatus($billNum, $billStatus);
                     $db->finishOperation($operation['id']);
 
-                    $params = ['bill' => $billNum, 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
+                    $params = ['bill' => $billNum, 'account' => $paymentEntry['account_num'], 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
                     $url = $operation['params']['callback_url'];
                     $this->callbackNotify($url, $params);
                 } else {
@@ -213,7 +215,7 @@ class ERIPMessageHandler {
                 $updateSuccessful = $db->updatePayment($paymentId, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
                 $operation = $this->getUserPaymentMonitoringOperation();
                 if ( $updateSuccessful && ! empty ($operation ) ) {
-                    $params = ['status' => 3, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
+                    $params = ['account' => $paymentEntry['account_num'], 'status' => 3, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
                     $url = $operation['params']['callback_url'];
                     $this->callbackNotify($url, $params);
                 } else {
@@ -255,9 +257,9 @@ class ERIPMessageHandler {
     }
 
     /**
-     * Определяет счет, по которому была совершена оплата, записи о которой в сообщении является $payment, и возвращает его номер
+     * Определяет счет, по которому была совершена оплата, записи о которой в сообщении является $paymentEntry, и возвращает его номер
      *
-     * @param array $payment
+     * @param array $paymentEntry
      * @return integer Номер счета, если оплата совершена по счету или false, если соответствия не найдено
      */
     private function getBillNumByPayment($paymentEntry) {
@@ -335,9 +337,9 @@ class ERIPMessageHandler {
             for ( $tryCount = 0; $tryCount < 3; $tryCount++ ) {
                 sleep($tryCount * 15);
 
-                http_get($url, $getParams, $info);
-                if ( $info['response_code'] == 200 ) {
-                    die();
+                $httpCode = get_http_response_code($url);
+                if ( 200 == $httpCode) {
+                    die(0);
                 }
             }
 

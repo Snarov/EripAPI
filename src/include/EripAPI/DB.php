@@ -80,37 +80,65 @@ class DB {
         }  
         return $secretKey;
     }
-    
+
     /**
      * Добавляет в базу нового пользователя. В случае успеха возвращает true, иначе - false
      *
      * @param string $username
      * @param string $password Пароль передается в уже зашифрованном виде.
-     * @param string
+     *
      * @return boolean
      * TODO добавить больше параметров
      *
      */
     public function addUser($username, $password, $secretKey) {
         global $logger;
-        
+
         try {
-            $stmt = $this->db->prepare('INSERT INTO users (name, password, secret_key1) VALUES (?, ?, ?)');
+            $stmt = $this->db->prepare('INSERT INTO users (name, password, secret_key) VALUES (?, ?, ?)');
             $stmt->bind_param('sss', $username, $password, $secretKey);
-            
+
             if ( $stmt->execute() ) {
                 return true;
             } else {
                 $logger->write('error', 'Ошибка создания нового пользователя: ' . $this->db->error);
                 return false;
             }
-           
+
         } catch ( Exception $e ) {
             $logger->write('error', $e);
             return false;
         }
     }
 
+    /**
+    * Изменяет пароль пользователя. В случае успеха возвращает true, иначе - false
+    * 
+    * @param string $username
+    * @param string $newPassword Пароль передается в уже зашифрованном виде.
+    *
+    * @return boolean
+    *
+    */
+    public function changeUserPassword($username, $newPassword) {
+        global $logger;
+
+        try {
+            $query = "UPDATE users SET password = '$newPassword' WHERE name LIKE '$username'";
+
+            if ( $this->db->query($query) ) {
+                return true;
+            } else {
+                $logger->write('error', 'Ошибка изменения пароля: ' . $this->db->error);
+                return false;
+            }
+
+        } catch ( Exception $e ) {
+            $logger->write('error', $e);
+            return false;
+        }
+    }
+    
     /**
      * Возвращает id юзера по его имени
      *
@@ -286,7 +314,7 @@ class DB {
                 if ( $operationParams ) {
                     $runningOperationId = $this->db->insert_id;
                     
-                    foreach ( $opeartionParams as $name => $value ) {
+                    foreach ( $operationParams as $name => $value ) {
                         $stmt = $this->db->prepare('INSERT INTO runops_custom_params (operation, param_name, value) VALUES (?, ?, ?)');
                         $stmt->bind_param('iss', $runningOperationId, $name, $value);
                         if ( ! $stmt->execute() ) {

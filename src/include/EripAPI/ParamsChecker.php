@@ -10,7 +10,7 @@ class InvalidParamValueException extends \Exception {};
 */
 abstract class ParamsChecker {
 
-    const ERIP_ID_REGEX = '/^\d{8}$/';
+    const ERIP_ID_REGEX = '/^\d{1,8}$/';
     const PERSONAL_ACC_NUM_REGEX = '/^.{1,30}$/';
     const CURRENCY_CODE_REGEX = '/^\d{1,3}$/';
     const STATUS_REGEX = '/^[12345]$/';
@@ -83,7 +83,7 @@ abstract class ParamsChecker {
     */
     static function getBillsOrPaymentsParamsCheck($eripID, $fromTimestamp, $toTimestamp, $status) {
         if (  null !== $eripID && preg_match( self::ERIP_ID_REGEX, $eripID ) !== 1 ) {
-            $errMsg .= "'eripID' must be an eight-digit number" . PHP_EOL;
+            $errMsg .= "'eripID' must be a number with lenght from 1 to 8" . PHP_EOL;
         }
 
         if ( '' !== $fromTimestamp ) {

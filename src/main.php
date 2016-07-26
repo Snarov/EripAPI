@@ -11,9 +11,9 @@ include API_ROOT_DIR . '/include/util/ErrorMessages.php';
 use JsonRPC\Server as Server;
 
 $logger = new Logger;
-$logger->addLog('error', API_ROOT_DIR . '/../log/error.log');
+// $logger->addLog('error', API_ROOT_DIR . '/../log/error.log');
 $logger->addLog('main', API_ROOT_DIR . '/../log/eripapi.log');
-$logger->addLog('debug', API_ROOT_DIR . '/../log/debug.log');
+$logger->addLog('debug', 'php://stdout');
 $logger->addLog('access', API_ROOT_DIR . '/../log/access.log');
 $logger->debug(true);
 
@@ -47,7 +47,7 @@ try {
                          $eripAPI->userId = $db->getUserIdByName($username);
                        }
                    );
-
+    
     $response = $server->execute();
     echo $response;
 } catch (Exception $e) {

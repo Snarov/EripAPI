@@ -12,6 +12,7 @@ class ERIPMessageIO {
     const DELIMITER = '^';
 
     private $ftpRoot;
+    private $ftpConnection;
     private $ftpServAddr;
     private $ftpUser;
     private $ftpPassword;
@@ -24,6 +25,11 @@ class ERIPMessageIO {
         $this->ftpPassword = $ftpPassword;
         
         $this->ftpRoot = "ftp://$ftpUser:$ftpPassword@$ftpServAddr";
+        
+        $this->ftp_connection = ftp_connect($ftpServAddr);
+        if ( ! @ftp_login($this->ftp_connection, $ftpUser, $ftpPassword) ) {
+            $this->ftp_connection = false;
+        }
     }
 
     /**
@@ -44,10 +50,10 @@ class ERIPMessageIO {
         
         $msgDatetime = date('YmdHis', $msgTimestamp);
         
-        $header = self::MSG_VERSION . self::DELIMITER . $eripCredentials['subcriber_code'] . self::DELIMITER .
+        $header = self::MSG_VERSION . self::DELIMITER . $eripCredentials['subscriber_code'] . self::DELIMITER .
                     $msgNum . self::DELIMITER . $msgDatetime . self::DELIMITER . '1' .self::DELIMITER .
                     $eripCredentials['unp'] . self::DELIMITER . $eripCredentials['bank_code'] . self::DELIMITER .
-                    $eripCredentials['account_num'] . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
+                    $personalAccNum . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
                     self::DELIMITER;
 
         $body = self::ENTRY_TYPE . self::DELIMITER . $personalAccNum . self::DELIMITER .
@@ -58,7 +64,7 @@ class ERIPMessageIO {
 
         $msgContent = iconv('UTF-8', 'CP1251', $header . PHP_EOL . $body);
 
-        $logger->write('debug', "$ftpRoot/in/$msgNum.202");
+        $logger->write('debug', "{$this->ftpRoot}/in/$msgNum.202");
         $logger->write('debug', $msgContent);
         return file_put_contents("{$this->ftpRoot}/in/$msgNum.202", $msgContent) > 0;
     }
@@ -250,12 +256,13 @@ class ERIPMessageIO {
 
      /**
      * Опрашивает ftp-сервер и возвращает список всех новых файлов в ftp-папке пользователя, появившихся с момента последнего опроса, если таковые имеются
+     * Новыми считаются файлы, которые находятся в папке /out. Прочитанные и обработанные файлы даолжны быть помечены и перенесены в папку /out/bak
      *
      * @param integer $userId
-     * @return array Список файлов или пустой массив, если новых файлов не появлялось
+     * @return array Список файлов или пустой массив, если новых файлов не появлялось. False в случае неудачи
      */
     public function  getNewFilesList() {
-        //TODO реализовать функцию, основываясь на ифнормации о ftp-сервере
+        return ftp_nlist($this->ftp_connection, '/out');
     }
 
     /**
