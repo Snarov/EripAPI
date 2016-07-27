@@ -201,6 +201,8 @@ class ERIPMessageIO {
         } 
 
         $message = array( 'header' => $header, 'body' => $body, 'type' => $msgType);
+        $this->markAsViewed($filename);
+        
         return message;
     }
 
@@ -268,11 +270,11 @@ class ERIPMessageIO {
     /**
      * Удаляет указанный файл и сохраняет его в буфер для возможности дальнейшей отмены удаления
      *
-     * @param $filename
-     * @param $fileURL
+     * @param string $filename
+     * @param string $fileURL
      * @return boolean true в случае успеха, иначе - false
      */
-    private function deleteFile ($filename, $fileURL) {
+    private function deleteFile( $filename, $fileURL ) {
         global $logger;
         
         if ($fileContent = file_get_contents($fileURL) ) {
@@ -289,4 +291,13 @@ class ERIPMessageIO {
             return false;
         }
     }
+    
+    /** 
+     * Отмечает сообщение с указанным именем как прочитанное. Прочитанные файлы перемещаются из /out в /out/bak. При успехе возвращает true, иначе - false
+     *
+     * @param string $filename 
+     */
+     private function markAsViewed( $filename ) {
+        return rename("{$this->ftpRoot}/out/$filename", "{$this->ftpRoot}/out/bak/$filename");
+     }
 }
