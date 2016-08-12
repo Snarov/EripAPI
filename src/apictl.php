@@ -14,14 +14,13 @@ if ( ! function_exists('random_int') ) {    // для работы с php с в�
 }
 
 define('PASSWORD_DEFAULT_LEN', 12);
-define('SECRET_KEY_LEN', 128);
+define('SECRET_KEY_LEN', 64);
 $params = new ScriptParams;
 
 $logger = new Logger;
 $logger->addLog(array('main'), API_ROOT_DIR . '/../log/eripapi.log');
 $logger->addLog(array('debug'), API_ROOT_DIR . '/../log/debug.log');
-// var_dump($logger->write('error', 'huj'));
-// var_dump(ini_get('error_log'));
+
 
 /**
  * Generate a random string, using a cryptographically secure 
@@ -51,6 +50,8 @@ $actions = array (
         global $logger;
         
         $username = $params->username;
+        $requisites = $params->requisites;
+        
         $password = random_str(10);
         $secretKey = bin2hex(openssl_random_pseudo_bytes(SECRET_KEY_LEN, $keyStrong));
 
@@ -59,14 +60,15 @@ $actions = array (
 
            require_once API_ROOT_DIR . '/include/EripAPI/DB.php';
             $db = new DB;
-            $userCreated =  $db->addUser($username, $passwordHash, $secretKey);
+            $userCreated =  $db->addUser($username, $passwordHash, $secretKey, $requisites);
+            $opCreated = $db->addRunningOperation($db->insert_id, 2);
         } else {
-            $logger->write('error', 'Пользователь не может быть создан: в системе отсутствует криптостойкий генератор');
+            $logger->write( 'Пользователь не может быть создан: в системе отсутствует криптостойкий генератор', 'error' );
         }
 
         if( $userCreated ) {
-            $logger->write('main', 'Создан новый пользователь ' . $username);
-            echo "Пользователь $username создан. Пароль: $password" . PHP_EOL;
+            $logger->write('Создан новый пользователь ' . $username, 'main');
+            echo "Пользователь $username создан. Пароль: $password. Секретный ключ: $secretKey" . PHP_EOL;
             exit(0);
         } else {
             exit ('Не удалось создать пользователя' . PHP_EOL);

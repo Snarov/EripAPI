@@ -49,24 +49,26 @@ class Logger {
     /**
      * Записать $message в лог $logname
      *
-     * @param string $logname
-     * @param string $message
+     * @param string  $message
+     * @param string  $logname
+     * @param string  $file имя файла в котором вызвана эта функция
+     * @param integer $line номер стройки в которой вызвана эта функция
      *
      * @return true в случае успеха или false в случае ошибки.
      */
-    public function write($logname, $message) {
+    public function write($message, $logname, $file = 'unknown', $line = 'unknown') {
 //         if ( ! array_key_exists($logname, $this->logFiles) ) {
 //             return false;
 //         }
 
         //обработка специальных имен логов
         if ( $logname === 'error' ) {
-            return error_log($message);
+            return error_log($this->format($message, $file, $line));
         } else if ( $logfile = $this->logFiles[$logname] ){
             if ( $logname === 'debug' && ! $this->debug ) {
                 return false;
             }
-         return file_put_contents($logfile, $this->format($message), FILE_APPEND) > 0;
+         return file_put_contents($logfile, $this->format($message, $file, $line), FILE_APPEND) > 0;
         }
 
         return false;
@@ -92,9 +94,12 @@ class Logger {
      * Форматирует собщение для логирования в формат, в котором сообщения записываются в лог файл.
      *
      * @param string $message
+     * @param string  $file имя файла в котором вызвана эта функция
+     * @param integer $line номер стройки в которой вызвана эта функция
+     *
      * @return string отформатированное сообщение
      */
-    private static function format($message) {
-        return '[' . date('D M d H:i:s Y', time()). '] ' . $message . PHP_EOL; 
+    private static function format($message, $file, $line) {
+        return "$file:$line " . '[' . date('D M d H:i:s Y', time()). '] ' . $message . PHP_EOL; 
     }
 }

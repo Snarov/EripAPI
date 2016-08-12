@@ -2,6 +2,6 @@
 
 while :
 do
-    php $API_ROOT_DIR/poll.php
+    php $2/poll.php
     sleep $1;
 done

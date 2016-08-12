@@ -10,6 +10,7 @@ class ERIPMessageIO {
     const MSG_VERSION = '5';
     const ENTRY_TYPE = '2';
     const DELIMITER = '^';
+    const OUTPUT_MSG_NAME_PATTERN = '/^.*\.2(04|06|10|16)$/';
 
     private $ftpRoot;
     private $ftpConnection;
@@ -45,47 +46,50 @@ class ERIPMessageIO {
     *
     * @return boolean true в случае успешной отправки сообщения, иначе - false.
     */
-    public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info){
+    public function addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $period, $eripCredentials, $msgTimestamp, $info){
         global $logger;
         
         $msgDatetime = date('YmdHis', $msgTimestamp);
         
         $header = self::MSG_VERSION . self::DELIMITER . $eripCredentials['subscriber_code'] . self::DELIMITER .
                     $msgNum . self::DELIMITER . $msgDatetime . self::DELIMITER . '1' .self::DELIMITER .
-                    $eripCredentials['unp'] . self::DELIMITER . $eripCredentials['bank_code'] . self::DELIMITER .
-                    $personalAccNum . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
-                    self::DELIMITER;
+                    $eripCredentials['unp'] . self::DELIMITER . $eripCredentials['bank_code'] . self::DELIMITER . 
+                    $eripCredentials['bank_account'] . self::DELIMITER . $eripID . self::DELIMITER . $currencyCode .
+                    self::DELIMITER . 'PS';
 
         $body = self::ENTRY_TYPE . self::DELIMITER . $personalAccNum . self::DELIMITER .
-                $info['fullname'] . self::DELIMITER . $info['address'] . self::DELIMITER . self::DELIMITER .
+                $info['customerFullname'] . self::DELIMITER . $info['customerAddress'] . self::DELIMITER . $period . self::DELIMITER .
                 $amount . self::DELIMITER . self::DELIMITER . $msgDatetime . self::DELIMITER . $info['additionalInfo'] . self::DELIMITER .
-                $info['additionalData'] . self::DELIMITER . self::DELIMITER . self::DELIMITER . self::DELIMITER . 
-                'PS' . self::DELIMITER;
+                $info['additionalData'] . self::DELIMITER . self::DELIMITER . self::DELIMITER . self::DELIMITER . self::DELIMITER;
 
         $msgContent = iconv('UTF-8', 'CP1251', $header . PHP_EOL . $body);
 
-        $logger->write('debug', "{$this->ftpRoot}/in/$msgNum.202");
-        $logger->write('debug', $msgContent);
         return file_put_contents("{$this->ftpRoot}/in/$msgNum.202", $msgContent) > 0;
     }
 
     /**
-    * Считывает сообщение с FTP сервера (из папки out) и возвращает содержащуюся в нем информацию.
+    * Считывает сообщение с FTP сервера и возвращает содержащуюся в нем информацию.
     *
     * @param string $filename Расширение имени файла определяет формат сообщения
     * @return array Массив с данными в случае успеха, иначе - false
     */
-    public function readMessage($filename) {
+    public function readMessage( $filename ) {
+        global $logger;
+            
+        $logger->write( "Попытка чтения сообщения $filename ...", 'debug', __FILE__, __LINE__ );
 
-        $msgType = pathinfo("$ftpRoot/$filename")['extension'];
-        if ( empty($msgType) || $msgType ) {
+        $msgType = pathinfo("{$this->ftpRoot}/out/$filename")['extension'];
+        if ( empty($msgType) ) {
+            $logger->write("Не удалось получить информацию о расширении имени файла $filename", 'error', __FILE__, __LINE__ );
             return false;
         }
 
-        $msgContent = file("$ftpRoot/out/$filename");
+        $msgContent = file("{$this->ftpRoot}/out/$filename", FILE_IGNORE_NEW_LINES);
         if ( empty($msgContent) ) {
+            $logger->write("Не удалось получить содержимое файла $filename", 'error', __FILE__, __LINE__ );
             return false;
         }
+        $msgContent = $this->msgToUTF8($msgContent);
 
         $msgType2HeaderKeys = array(                         //имена столбцов заголовка сообщения для каждого типа сообщений
                                     '204' => array(
@@ -97,6 +101,7 @@ class ERIPMessageIO {
                                                     'msg202_datetime',
                                                     'result',
                                                     'err_msg',
+                                                    'err_count',
                                                   ),
                                     '206' => array(
                                                     'msg_version',
@@ -119,7 +124,7 @@ class ERIPMessageIO {
                                                     'agent_code',
                                                     'unp',
                                                     'bank_code',
-                                                    'account_num',
+                                                    'personal_acc_num',
                                                     'paydoc_num',
                                                     'transfer_datetime',
                                                     'currency_code',
@@ -127,7 +132,7 @@ class ERIPMessageIO {
                                                     'fine_amount',
                                                     'transfer_amount',
                                                     'agent_bank_code',
-                                                    'agent_account_num',
+                                                    'agent_acc_num',
                                                     'budget_payment_code',
                                                   ),
                                     );
@@ -137,11 +142,12 @@ class ERIPMessageIO {
                                     '204' => array(
                                                     'entry_num',
                                                     'err_text',
+                                                    'src_entry',
                                                   ),
                                     '206' => array(
                                                     'entry_num',
                                                     'erip_id',
-                                                    'account_num',
+                                                    'personal_acc_num',
                                                     'customer_fullname',
                                                     'customer_address',
                                                     'period',
@@ -150,12 +156,12 @@ class ERIPMessageIO {
                                                     'payment_datetime',
                                                     'null',
                                                     'bill_datetime',
-                                                    'central_node_op_num',
+                                                    'erip_op_num',
                                                     'agent_op_num',
                                                     'device_id',
                                                     'authorization_way',
                                                     'additional_info',
-                                                    'agent_code',
+                                                    'agent_bank_code',
                                                     'additional_data',
                                                     'authorization_way_id',
                                                     'device_type_code',
@@ -163,17 +169,17 @@ class ERIPMessageIO {
                                     '210' => array(
                                                     'entry_num',
                                                     'erip_id',
-                                                    'account_num',
+                                                    'personal_acc_num',
                                                     'customer_fullname',
                                                     'customer_address',
                                                     'period',
                                                     'amount',
                                                     'fine_amount',
                                                     'transfer_amount',
-                                                    'operation_datetime',
+                                                    'payment_datetime',
                                                     'meters',        //оплата показаний счетчиков пока что не поодерижвается этим API
                                                     'bill_datetime',
-                                                    'central_node_op_num',
+                                                    'erip_op_num',
                                                     'agent_op_num',
                                                     'device_id',
                                                     'authorization_way',
@@ -183,55 +189,53 @@ class ERIPMessageIO {
                                                     'device_type_code',
                                                   ),
                                     );
-        $msgType2BodyKey['216'] = array_splice($msgType2BodyKeys['206'], 9, 0, 'reversal_datetime'); //для сообщения 216 тело отличается наличием одного дополнительного поля
+        $msgType2BodyKeys['216'] = $msgType2BodyKeys['206'];
+        array_splice($msgType2BodyKeys['216'], 9, 0, 'reversal_datetime'); //для сообщения 216 тело отличается наличием одного дополнительного поля
 
         if ( ! $headerKeys = $msgType2HeaderKeys[$msgType] ) {
             return false;
         }
         $headerValues = explode('^', $msgContent[0]);
+        //ЕРИП шлет сообщения,формат которых не соответствет документации, поэтому приходится выкручиваться
+        if ( count( $headerKeys ) !== count( $headerValues ) ) {
+            $headerValues[] = '1';
+        }
         $header = array_combine($headerKeys, $headerValues);
 
         if ( ! $bodyKeys = $msgType2BodyKeys[$msgType] ) {
             return false;
         }
         $body = array();
-        for ( $i = 1; $i < count($msgContent); $i++ ) {
-            $bodyValues = explode('^', $msgContent[$i]);
-            $body[$i - 1] = array_combine($bodyKeys, $bodyValues);
-        } 
-
-        $message = array( 'header' => $header, 'body' => $body, 'type' => $msgType);
-        $this->markAsViewed($filename);
         
-        return message;
-    }
-
-    /**
-    * Удаляет файл входящего сообщения на сервере ЕРИП. Файл для удаления должен находится в директории in или in/bak. Отмена удаления может быть произведена с помощью вызыова метода
-    * udnoDeleteMessage() с тем же значением аргумента $filename, что и при вызовае этой функции.
-    *
-    * @param string $filename 
-    * @return boolean true в случае успеха, иначе - false
-    */
-    public function deleteInMessage($filename){
-        if ( file_exists("{$this->ftpRoot}/in/$filename") ) {
-             $fileURL = "{$this->ftpRoot}/in/$filename";
-        } else if ( file_exists("{$this->ftpRoot}/in/bak/$filename") ) {
-            $fileURL = "{$this->ftpRoot}/in/bak/$filename";
+        if ( $msgType != 204 ) {
+            for ( $i = 1; $i <= $header['entries_count']; $i++ ) {
+                $bodyValues = explode('^', $msgContent[$i]);
+                if ( count( $bodyValues ) === count( $bodyKeys ) ) {
+                    $body[$i - 1] = array_combine($bodyKeys, $bodyValues);
+                }
+            }
         }
 
-        return $this->deleteFile($filename, $fileURL);
+        $message = array( 'header' => $header, 'body' => $body, 'type' => $msgType);
+        $logger->write( "Прочитано сообщение $filename: " . print_r( $message, true ), 'debug', __FILE__, __LINE__);
+        
+        if ( ! $this->markAsViewed($filename) ) {
+            $logger->write("Не удалось пометить сообщение $filename как прочитанное", 'error');
+        }
+        
+        return $message;
     }
 
+
     /**
-    * Удаляет файл исходящего сообщения на сервере ЕРИП. Файл для удаления должен находится в директории out. Отмена удаления может быть произведена с помощью вызыова метода
+    * Удаляет файл сообщения на сервере ЕРИП. Отмена удаления может быть произведена с помощью вызыова метода
     * udnoDeleteMessage() с тем же значением аргумента $filename, что и при вызовае этой функции.
     *
     * @param string $filename 
     * @return boolean true в случае успеха, иначе - false
     */
-    public function deleteOutMessage($filename){
-        return $this->deleteFile($filename, "$ftpRoot/out/$filename");
+    public function deleteMessage($filename){
+        return $this->deleteFile($filename, "$this->ftpRoot/$filename");
     }
 
     /**
@@ -251,20 +255,36 @@ class ERIPMessageIO {
             unset($this->deletionBuffer[$filename]);
             return true;
         } else {
-            $logger->write('error', __METHOD__ . ': Ошибка восстановления удаленного файла: не удается произвести запись в файл');
+            $logger->write( ': Ошибка восстановления удаленного файла: не удается произвести запись в файл', 'error', __FILE__, __LINE__);
             return false;
         }
     }
 
      /**
      * Опрашивает ftp-сервер и возвращает список всех новых файлов в ftp-папке пользователя, появившихся с момента последнего опроса, если таковые имеются
-     * Новыми считаются файлы, которые находятся в папке /out. Прочитанные и обработанные файлы даолжны быть помечены и перенесены в папку /out/bak
+     * Новыми считаются файлы, которые находятся в папке /out. Прочитанные и обработанные файлы должны быть помечены, т.е. перенесены в папку /out/bak. 
      *
      * @param integer $userId
-     * @return array Список файлов или пустой массив, если новых файлов не появлялось. False в случае неудачи
+     * @return array Список файлов, отсортированных по типу (202=>204=>206=> или пустой массив, если новых файлов не появлялось. False в случае неудачи
      */
     public function  getNewFilesList() {
-        return ftp_nlist($this->ftp_connection, '/out');
+        $fileList = ftp_nlist($this->ftp_connection, '/out');
+        if ( ! is_array( $fileList ) ) {
+            return false;
+        }
+
+        $fileList = array_filter( $fileList, function( $fileName ) {
+            return preg_match( self::OUTPUT_MSG_NAME_PATTERN, $fileName ) === 1;
+        } );
+
+        usort( $fileList, function ( $a, $b ) { // сортируем по возрастанию типов
+            $msgTypeA = explode( '.', $a )[1];
+            $msgTypeB = explode( '.', $b )[1];
+
+            return strcmp( $msgTypeA, $msgTypeB );
+        } );
+
+        return $fileList;
     }
 
     /**
@@ -272,32 +292,53 @@ class ERIPMessageIO {
      *
      * @param string $filename
      * @param string $fileURL
+
      * @return boolean true в случае успеха, иначе - false
      */
     private function deleteFile( $filename, $fileURL ) {
         global $logger;
         
         if ($fileContent = file_get_contents($fileURL) ) {
-            $deleteSuccesful = unlink($fileURL);
-            if ( $deleteSuccessful ) {
+            $deletionSuccessful = unlink($fileURL);
+            if ( ! empty( $deletionSuccessful ) ) {
                 $this->deletionBuffer[$filename] = ['file_URL' => $fileURL, 'file_content' => $fileContent];
             } else {
-                $logger->write('error', __METHOD__ . 'Ошибка удаления файла с ftp-сервера');
+                $logger->write( 'Ошибка удаления файла с ftp-сервера', 'error');
             }
-
-            return $deleteSuccesful;
+            return $deletionSuccessful;
         } else {
-            $logger->write('error', __METHOD__ . 'Ошибка чтения файла с ftp-сервера');
+            $logger->write( 'Ошибка чтения файла с ftp-сервера', 'error');
             return false;
         }
     }
     
     /** 
-     * Отмечает сообщение с указанным именем как прочитанное. Прочитанные файлы перемещаются из /out в /out/bak. При успехе возвращает true, иначе - false
+     * Отмечает сообщение с указанным именем как прочитанное. Прочитанные файлы перемещаются из /out в /out/bak. При успехе возвращает true, иначе - false. Так как по непоятным причинам ftp сервер запрещает перемещать файлы, то приходится их считывать, удалять и затем записывать в другое место.
      *
      * @param string $filename 
      */
-     private function markAsViewed( $filename ) {
-        return rename("{$this->ftpRoot}/out/$filename", "{$this->ftpRoot}/out/bak/$filename");
-     }
+    private function markAsViewed( $filename ) {
+        $newFilename = 'out/bak/' . $filename; //предполагатеся что помечаются файлы только из папки /out
+        $filename = 'out/' . $filename;
+        
+        $successfull = $this->deleteFile( $filename, "$this->ftpRoot/$filename") &&
+        file_put_contents( "$this->ftpRoot/$newFilename", $this->deletionBuffer[$filename]['file_content']);
+
+        return $successfull;
+    }
+
+    /**
+     * Изменяет кодировку массива, содержащего строки входящего сообщения с cp1251 на UTF8. Вынесено в отдельную функцию во имя безопасности
+     *
+     * @param array $msg
+     *
+     * @return array Массив перекодированных строк
+     */
+    private function msgToUTF8( $msg ) {
+        foreach( $msg as &$string ) {
+            $string = iconv( 'cp1251', 'UTF-8', $string);
+        }
+
+        return $msg;
+    }
 }

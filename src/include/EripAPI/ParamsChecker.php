@@ -35,8 +35,8 @@ abstract class ParamsChecker {
         if ( preg_match(self::PERSONAL_ACC_NUM_REGEX, $personalAccNum) !== 1 ) {
             $errMsg .= "'personalAccNum' must be not empty and its maximum length is 30 characters" . PHP_EOL;
         }
-        if ( ! is_numeric($amount) || $amount <= 0 ) {
-            $errMsg .= "'amount' must be a positive number" . PHP_EOL;
+        if ( ! is_numeric($amount) || $amount < 0 ) {
+            $errMsg .= "'amount' must be a non-negative number" . PHP_EOL;
         }
         if ( preg_match(self::CURRENCY_CODE_REGEX, $currencyCode) !== 1 ) {
             $errMsg .= "'currencyCode' must contain from 1 to 3 digits" . PHP_EOL;

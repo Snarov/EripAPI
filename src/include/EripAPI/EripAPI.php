@@ -20,27 +20,28 @@ class EripAPI implements IEripAPI {
      * @param integer $eripID Идентификатор услуги в ЕРИП
      * @param string $personalAccNum Номер лицевого счета (уникальное значение, однозначно идентифицирующее потребителя услуг или товар)
      * @param float $amount Сумма задолженности потребителя услуг перед производителем услуг. Отрицательное значение означает задолженность производителя перед потребителем
-     * @param integer $currencyCode  Код валюты требований к оплате 
+     * @param integer $currencyCode  Код валюты требований к оплате
+     * @param integer $period  Период, за который выставляется счет 
      * @param object $info Дополнительная инорфмация о счете
      * @param string $callbackURL Адрес, по которому произойдет обращение при изменении статуса заказа
      * @return integer Номер счета
      */
-    function createBill( $eripID, $personalAccNum, $amount, $currencyCode, $info = null, $callbackURL = null) {
+    function createBill( $eripID, $personalAccNum, $amount, $currencyCode, $period = null, $info = null, $callbackURL = null) {
        ParamsChecker::createBillParamsCheck($eripID, $personalAccNum, $amount, $currencyCode, $info, $callbackURL);
 
        global $logger;
        global $db;
        
        $ftpConnectionData = $db->getFtpConnectionData($this->userId);
-       $msgNum = $db->getNextBillNum();
-       if (  empty($ftpConnectionData) ||  empty($msgNum) ) {
-           $logger->write('error', 'Ошибка создания сообщения 202: данные не получены');
+       
+       if (  empty($ftpConnectionData) ) {
+           $logger->write( 'Ошибка создания сообщения 202: данные не получены', 'error');
            throw new APIInternalError(API_INTERNAL_ERROR_MSG);
        }
 
        $eripCredentials = $db->getEripCredentials($this->userId);
        if ( empty($eripCredentials) ) {
-           $logger->write('error', 'Ошибка создания сообщения 202: данные об абоненте ЕРИП не получены');
+           $logger->write('Ошибка создания сообщения 202: данные об абоненте ЕРИП не получены', 'error');
            throw new APIInternalError(API_INTERNAL_ERROR_MSG);
        }
 
@@ -48,21 +49,23 @@ class EripAPI implements IEripAPI {
        
        extract($ftpConnectionData);
        
-       if( ! $db->addBill($this->userId,  $eripID, $personalAccNum, $amount, $currencyCode, $msgTimestamp, $info) ) {
-           $logger->write('error', 'Ошибка создания сообщения 202: ошибка создания записи счета');
+       $msgNum = $db->getNextBillNum();
+       if( ! $db->addBill($this->userId,  $eripID, $personalAccNum, $amount, $currencyCode, $period,  $msgTimestamp, $info) ) {
+           $logger->write('Ошибка создания сообщения 202: ошибка создания записи счета', 'error');
            throw new APIInternalError(API_INTERNAL_ERROR_MSG);
        }
 
        $msgIO = new MessageIO($ftp_host, $ftp_user, $ftp_password); //имена переменных не в camelCase потому что они идентичны именам столбцов в таблице БД
-       if ( ! $msgIO->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $eripCredentials, $msgTimestamp, $info) ) {
+       if ( ! $msgIO->addMessage($msgNum, $eripID, $personalAccNum, $amount, $currencyCode, $period, $eripCredentials, $msgTimestamp, $info) ) {
            $db->deleteBill($msgNum);
-           $logger->write('error', 'Ошибка создания сообщения 202: ошибка отправки файла сообщения на ftp-сервер ЕРИП');
+           $logger->write('Ошибка создания сообщения 202: ошибка отправки файла сообщения на ftp-сервер ЕРИП', 'error');
            throw new APIInternalError(API_INTERNAL_ERROR_MSG);
        }
        
        $params = array();
        if ( $callbackURL ) {
            $params['callbackURL'] = $callbackURL;
+           $params['bill'] = $msgNum;
        }
        $db->addRunningOperation($this->userId, 1, $params);
        
@@ -94,7 +97,7 @@ class EripAPI implements IEripAPI {
         $billDetails['amount'] = $rawBillDetails['amount'];
         $billDetails['currencyCode'] = $rawBillDetails['currency_code'];
         $billDetails['status'] = $rawBillDetails['status'];
-        $billDetails['timestamp'] = $rawBillDetails['timestamp'];
+        $billDetails['timestamp'] = (string)strtotime($rawBillDetails['datetime']);
         if ( $rawBillDetails['customer_fullname'] ) {  $billDetails['info']['customerFullname'] = $rawBillDetails['customer_fullname']; }
         if ( $rawBillDetails['customer_address'] ) {  $billDetails['info']['customerAddress'] = $rawBillDetails['customer_address']; }
         if ( $rawBillDetails['additional_info'] ) {  $billDetails['info']['additionalInfo'] = $rawBillDetails['additional_info']; }
@@ -108,7 +111,7 @@ class EripAPI implements IEripAPI {
      * Получить текущий статус счета
      * 
      * @param $billNum Номер счета 
-     * @return int Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен) или null в случае если счет не найден
+     * @return int Код статуса (0 - в обработке; 1 - активен и  ожидает оплаты; 2 - истек; 3 - ошибочен ) или null в случае если счет не найден
      */
     function getBillStatus( $billNum ) {
         ParamsChecker::billNumCheck($billNum);
@@ -123,15 +126,17 @@ class EripAPI implements IEripAPI {
     }
 
     /**
-     * Удалить счет
+     * Удалить счет. Пока не поддерживается
      *
      * @param $billNum Номер счета
      * @return bool true в случае успешного удаления, иначе - false
      */
     function deleteBill( $billNum ) {
+        return "not supported yet";
+        
         global $logger;
         global $db;
-
+        
         ParamsChecker::billNumCheck($billNum);
 
         if ( ! $db->billExists($billNum) ) {
@@ -142,10 +147,9 @@ class EripAPI implements IEripAPI {
             return false;
         }
 
-        $logger->write('debug', 'userid = ' . $this->userId);
         $ftpConnectionData = $db->getFtpConnectionData($this->userId);
         if (  empty($ftpConnectionData) ) {
-           $logger->write('error', __METHOD__ . ': Ошибка: не удается получить данные, необходимые для установления ftp-соединения');
+            $logger->write( __METHOD__ . ': Ошибка: не удается получить данные, необходимые для установления ftp-соединения', 'error');
            throw new APIInternalError(API_INTERNAL_ERROR_MSG, -32003);
         }
 
@@ -166,7 +170,7 @@ class EripAPI implements IEripAPI {
      * @param int $eripID Идентификатор услуги в ЕРИП. Если не указан, то возвращаются данные по всем услугам данного ПУ.
      * @param int $fromTimestamp Начало периода (UNIX-время)
      * @param int $toTimestamp Конец периода (UNIX-время)
-     * @param int $status Код статуса (1 - Ожидает оплату 2 - Просрочен 3 - Оплачен 4 - Оплачен частично 5 - Отменен). Если не указан, то будут возвращены все счета,
+     * @param int $status Код статуса (0 - в обработке; 1 - активен и  ожидает оплаты; 2 - истек; 3 - ошибочен). Если не указан, то будут возвращены все счета,
      * вне зависимости от их текущего статуса
      *
      * @return array Список счетов 
@@ -204,7 +208,7 @@ class EripAPI implements IEripAPI {
             $billDetails['amount'] = $rawBillDetails['amount'];
             $billDetails['currencyCode'] = $rawBillDetails['currency_code'];
             $billDetails['status'] = $rawBillDetails['status'];
-            $billDetails['timestamp'] = $rawBillDetails['timestamp'];
+            $billDetails['timestamp'] = (string)strtotime($rawBillDetails['datetime']);
             if ( $rawBillDetails['customer_fullname'] ) {  $billDetails['info']['customerFullname'] = $rawBillDetails['customer_fullname']; }
             if ( $rawBillDetails['customer_address'] ) {  $billDetails['info']['customerAddress'] = $rawBillDetails['customer_address']; }
             if ( $rawBillDetails['additional_info'] ) {  $billDetails['info']['additionalInfo'] = $rawBillDetails['additional_info']; }
@@ -218,12 +222,12 @@ class EripAPI implements IEripAPI {
     }
     
     /**
-     * Получить детальную информацию по платежу
+     * Получить детальную информацию по платежам по счету 
      *
      * @param $billNum
-     * @return object Информация об оплате и null, если платежа по счету с таким номером не существует
+     * @return object Информация об оплате и null, если платежа по счету с таким номером не существует у данного пользователя
      */
-    function getPayment($billNum) {
+    function getPaymentsOnBill($billNum) {
         ParamsChecker::billNumCheck($billNum);
 
         global $logger;
@@ -233,36 +237,44 @@ class EripAPI implements IEripAPI {
             return null;
         }
 
-        $rawPaymentDetails = $db->getPayment($billNum);
-        if ( empty ($rawPaymentBillDetails) ) {
+        $rawPaymentsDetails = $db->getPaymentsByBill($billNum);
+        if ( empty ($rawPaymentsDetails) ) {
             return null;
         }
-         //Выбираем только нужные поля и изменяем стиль именования
-        $paymentDetails['eripID'] = $rawPaymentDetails['erip_id'];
-        $paymentDetails['personalAccNum'] = $rawPaymentDetails['personal_acc_num'];
-        $paymentDetails['amount'] = $rawPaymentDetails['amount'];
-        $paymentDetails['fineAmount'] = $rawPaymentDetails['fine_amount'];
-        $paymentDetails['currencyCode'] = $rawPaymentDetails['currency_code'];
-        $paymentDetails['status'] = $rawPaymentDetails['status'];
-        $paymentDetails['paymentTimestamp'] = $rawPaymentDetails['payment_timestamp'];
-        $paymentDetails['eripOpNum'] = $rawPaymentDetails['erip_op_num'];
-        $paymentDetails['deviceId'] = $rawPaymentDetails['device_id'];
-        $paymentDetails['agentBankCode'] = $rawPaymentDetails['agent_bank_code'];
-        $paymentDetails['agentAccNum'] = $rawPaymentDetails['agent_acc_num'];
-        $paymentDetails['budgetPaymentCode'] = $rawPaymentDetails['budget_payment_code'];
-        if ( $paymentDetails['agent_op_num'] ) { $paymentDetails['agentOpNum'] = $rawPaymentDetails['agent_op_num']; }
-        if ( $paymentDetails['transfer_timestamp'] ) { $paymentDetails['transfer_timestamp'] = $rawPaymentDetails['transfer_timestamp']; }
-        if ( $paymentDetails['reversal_timestamp'] ) { $paymentDetails['reversal_timestamp'] = $rawPaymentDetails['reversal_timestamp']; }
-        if ( $rawPaymentDetails['customer_fullname'] ) {  $paymentDetails['info']['customerFullname'] = $rawPaymentDetails['customer_fullname']; }
-        if ( $rawPaymentDetails['customer_address'] ) {  $paymentDetails['info']['customerAddress'] = $rawPaymentDetails['customer_address']; }
-        if ( $paymentDetails['authorization_way'] ) { $paymentDetails['authorizationWay'] = $rawPaymentDetails['authorization_way']; }
-        if ( $rawPaymentDetails['additional_info'] ) {  $paymentDetails['info']['additionalInfo'] = $rawPaymentDetails['additional_info']; }
-        if ( $rawPaymentDetails['additional_data'] ) {  $paymentDetails['info']['additionalData'] = $rawPaymentDetails['additional_data']; }
-        if ( $paymentDetails['authorization_way_id'] ) { $paymentDetails['authorizationWayId'] = $rawPaymentDetails['authorization_way_id']; }
-        if ( $paymentDetails['device_type_code'] ) { $paymentDetails['deviceTypeCode'] = $rawPaymentDetails['device_type_code']; }
-        //TODO добавить поле с информацией по счетчикам (meters)
 
-        return $paymentDetails;
+        $paymentsDetails = array();
+        foreach ( $rawPaymentsDetails as $rawPaymentDetails ) {
+            $logger->write("payment structure: " . print_r($rawPaymentDetails, true), 'debug' , __FILE__, __LINE__);
+            //Выбираем только нужные поля и изменяем стиль именования
+            $paymentDetails['eripID'] = $rawPaymentDetails['erip_id'];
+            $paymentDetails['personalAccNum'] = $rawPaymentDetails['personal_acc_num'];
+            $paymentDetails['amount'] = $rawPaymentDetails['amount'];
+            $paymentDetails['fineAmount'] = $rawPaymentDetails['fine_amount'];
+            $paymentDetails['currencyCode'] = $rawPaymentDetails['currency_code'];
+            $paymentDetails['status'] = $rawPaymentDetails['status'];
+            $paymentDetails['paymentTimestamp'] = (string)strtotime($rawPaymentDetails['payment_datetime']);
+            $paymentDetails['eripOpNum'] = $rawPaymentDetails['erip_op_num'];
+            $paymentDetails['deviceId'] = $rawPaymentDetails['device_id'];
+            $paymentDetails['agentBankCode'] = $rawPaymentDetails['agent_bank_code'];
+            $paymentDetails['agentAccNum'] = $rawPaymentDetails['agent_acc_num'];
+            if ( $rawPaymentDetails['budget_payment_code'] ) { $paymentDetails['budgetPaymentCode'] = $rawPaymentDetails['budget_payment_code'];}
+            if ( $rawPaymentDetails['agent_op_num'] ) { $paymentDetails['agentOpNum'] = $rawPaymentDetails['agent_op_num']; }
+            if ( $rawPaymentDetails['transfer_datetime'] ) { $paymentDetails['transferTimestamp'] = (string)strtotime($rawPaymentDetails['transfer_datetime']); }
+            if ( $rawPaymentDetails['reversal_datetime'] ) { $paymentDetails['reversalTimestamp'] = (string)strtotime($rawPaymentDetails['reversal_datetime']); }
+            if ( $rawPaymentDetails['authorization_way'] ) { $paymentDetails['authorizationWay'] = $rawPaymentDetails['authorization_way']; }
+            if ( $rawPaymentDetails['authorization_way_id'] ) { $paymentDetails['authorizationWayId'] = $rawPaymentDetails['authorization_way_id']; }
+            if ( $rawPaymentDetails['device_type_code'] ) { $paymentDetails['deviceTypeCode'] = $rawPaymentDetails['device_type_code']; }
+            if ( $rawPaymentDetails['additional_info'] ) {  $paymentDetails['info']['additionalInfo'] = $rawPaymentDetails['additional_info']; }
+            if ( $rawPaymentDetails['additional_data'] ) {  $paymentDetails['info']['additionalData'] = $rawPaymentDetails['additional_data']; }
+            if ( $rawPaymentDetails['customer_fullname'] ) {  $paymentDetails['info']['customerFullname'] = $rawPaymentDetails['customer_fullname']; }
+            if ( $rawPaymentDetails['customer_address'] ) {  $paymentDetails['info']['customerAddress'] = $rawPaymentDetails['customer_address']; }
+           
+            //TODO добавить поле с информацией по счетчикам (meters)
+
+            $paymentsDetails[] = $paymentDetails;
+        }
+
+        return $paymentsDetails;
     }
     
     /**
@@ -276,7 +288,7 @@ class EripAPI implements IEripAPI {
      *
      * @return array Список оплаченных счетов
      */
-    function getPayments ( $eripID, $fromTimestamp = '', $toTimestamp = '', $status = null ){
+    function getPayments ( $eripID = null, $fromTimestamp = '', $toTimestamp = '', $status = null ){
         ParamsChecker::getBillsOrPaymentsParamsCheck($eripID, $fromTimestamp, $toTimestamp, $status);
 
         global $logger;
@@ -286,10 +298,10 @@ class EripAPI implements IEripAPI {
             $fromTimestamp = time() - 30 * 24 * 60 * 60; //устанавливается равным моменту, отстоящим на 30 дней назад.
         }
         if ( '' === $toTimestamp ) {
-            $toTomestamp = time(); //устанавливается равным настоящему моменту
+            $toTimestamp = time(); //устанавливается равным настоящему моменту
         }
 
-        $rawPaymentsDetails = $db->getPaymets($this->userId, $eripID, $fromTimestamp, $toTimestamp, $status);
+        $rawPaymentsDetails = $db->getPayments($this->userId, $eripID, $fromTimestamp, $toTimestamp, $status);
         
         if ( empty ($rawPaymentsDetails) ) {
             return null;
@@ -299,6 +311,7 @@ class EripAPI implements IEripAPI {
         foreach ( $rawPaymentsDetails as $rawPaymentDetails ) {
             $paymentDetails = array();
 
+            $logger->write("payment structure: " . print_r($rawPaymentDetails, true), 'debug' , __FILE__, __LINE__);
             //Выбираем только нужные поля и изменяем стиль именования
             $paymentDetails['eripID'] = $rawPaymentDetails['erip_id'];
             $paymentDetails['personalAccNum'] = $rawPaymentDetails['personal_acc_num'];
@@ -306,22 +319,22 @@ class EripAPI implements IEripAPI {
             $paymentDetails['fineAmount'] = $rawPaymentDetails['fine_amount'];
             $paymentDetails['currencyCode'] = $rawPaymentDetails['currency_code'];
             $paymentDetails['status'] = $rawPaymentDetails['status'];
-            $paymentDetails['paymentTimestamp'] = $rawPaymentDetails['payment_timestamp'];
+            $paymentDetails['paymentTimestamp'] = (string)strtotime($rawPaymentDetails['payment_datetime']);
             $paymentDetails['eripOpNum'] = $rawPaymentDetails['erip_op_num'];
             $paymentDetails['deviceId'] = $rawPaymentDetails['device_id'];
             $paymentDetails['agentBankCode'] = $rawPaymentDetails['agent_bank_code'];
             $paymentDetails['agentAccNum'] = $rawPaymentDetails['agent_acc_num'];
-            $paymentDetails['budgetPaymentCode'] = $rawPaymentDetails['budget_payment_code'];
-            if ( $paymentDetails['agent_op_num'] ) { $paymentDetails['agentOpNum'] = $rawPaymentDetails['agent_op_num']; }
-            if ( $paymentDetails['transfer_timestamp'] ) { $paymentDetails['transfer_timestamp'] = $rawPaymentDetails['transfer_timestamp']; }
-            if ( $paymentDetails['reversal_timestamp'] ) { $paymentDetails['reversal_timestamp'] = $rawPaymentDetails['reversal_timestamp']; }
-            if ( $rawPaymentDetails['customer_fullname'] ) {  $paymentDetails['info']['customerFullname'] = $rawPaymentDetails['customer_fullname']; }
-            if ( $rawPaymentDetails['customer_address'] ) {  $paymentDetails['info']['customerAddress'] = $rawPaymentDetails['customer_address']; }
-            if ( $paymentDetails['authorization_way'] ) { $paymentDetails['authorizationWay'] = $rawPaymentDetails['authorization_way']; }
+            if ( $rawPaymentDetails['budget_payment_code'] ) { $paymentDetails['budgetPaymentCode'] = $rawPaymentDetails['budget_payment_code'];}
+            if ( $rawPaymentDetails['agent_op_num'] ) { $paymentDetails['agentOpNum'] = $rawPaymentDetails['agent_op_num']; }
+            if ( $rawPaymentDetails['transfer_datetime'] ) { $paymentDetails['transferTimestamp'] = (string)strtotime($rawPaymentDetails['transfer_datetime']); }
+            if ( $rawPaymentDetails['reversal_datetime'] ) { $paymentDetails['reversalTimestamp'] = (string)strtotime($rawPaymentDetails['reversal_datetime']); }
+            if ( $rawPaymentDetails['authorization_way'] ) { $paymentDetails['authorizationWay'] = $rawPaymentDetails['authorization_way']; }
+            if ( $rawPaymentDetails['authorization_way_id'] ) { $paymentDetails['authorizationWayId'] = $rawPaymentDetails['authorization_way_id']; }
+            if ( $rawPaymentDetails['device_type_code'] ) { $paymentDetails['deviceTypeCode'] = $rawPaymentDetails['device_type_code']; }
             if ( $rawPaymentDetails['additional_info'] ) {  $paymentDetails['info']['additionalInfo'] = $rawPaymentDetails['additional_info']; }
             if ( $rawPaymentDetails['additional_data'] ) {  $paymentDetails['info']['additionalData'] = $rawPaymentDetails['additional_data']; }
-            if ( $paymentDetails['authorization_way_id'] ) { $paymentDetails['authorizationWayId'] = $rawPaymentDetails['authorization_way_id']; }
-            if ( $paymentDetails['device_type_code'] ) { $paymentDetails['deviceTypeCode'] = $rawPaymentDetails['device_type_code']; }
+            if ( $rawPaymentDetails['customer_fullname'] ) {  $paymentDetails['info']['customerFullname'] = $rawPaymentDetails['customer_fullname']; }
+            if ( $rawPaymentDetails['customer_address'] ) {  $paymentDetails['info']['customerAddress'] = $rawPaymentDetails['customer_address']; }
             //TODO добавить поле с информацией по счетчикам (meters)
 
             $paymentsDetails[] = $paymentDetails;

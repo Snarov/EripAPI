@@ -11,6 +11,15 @@ include_once API_ROOT_DIR . '/include/util/Functions.php';
  */
 class ERIPMessageHandler {
 
+    const HMAC_ALG = 'sha512';
+
+    /**
+     * @access private
+     * @var integer
+     *
+     */
+    private $userId;
+    
     /**
      * Список выполняющихся операций пользователя, которые ждут обработки файлов (Операции типа "мониторинг статуса счета" и "мониторинг поступления нвоых платежей")
      *2
@@ -30,18 +39,24 @@ class ERIPMessageHandler {
     public function __construct($userId) {
         global $db;
         global $logger;
+
+        $this->userId = $userId;
         
-        $this->operations = $db->getRunningOperations($userId, 1, 2);
-        foreach ( $this->operations as $operation) {
+        $this->operations = array_merge( $db->getRunningOperations($userId, 1), $db->getRunningOperations($userId, 2));
+        foreach ( $this->operations as $index => $operation ) {
             if ( $operation['type'] !== 1 ) {
-                // $logger->write('error', __METHOD__ . ': Для операции типа типа "мониторинг статуса счета" не задан номер счета');
                 continue;
             }
             
+            if ( ! isset( $operation['params']['bill'] ) ) {
+                $logger->write( "Для операции {$operation['id']} не задан номер счета", 'error');
+                unset ( $this->operations[$index] );
+                continue;
+            }
             $billNum = $operation['params']['bill'];
             $bill = $db->getBill($billNum);
             if ( empty($bill) ) {
-                $logger->write('error', __METHOD__ . ": Не удалось получить информацию о счете с номером $billNum");
+                $logger->write( ": Не удалось получить информацию о счете с номером $billNum", 'error', __FILE__, __LINE__);
                 continue;
             }
 
@@ -68,24 +83,30 @@ class ERIPMessageHandler {
         global $db;
         global $logger;
         
-        $billNum = $message['header']['msg202_num'];
+        $billNum =  $message['header']['msg202_num'] ;
         $operation = $this->getMonitoringOperationByBill($billNum);
         if ( $operation ) {
             if ( $message['header']['result'] != 0 ) {
-                $billStatus = 0;
+                $billStatus = 3;
                 $db->setBillStatus($billNum, $billStatus);
-                $db->setBillError($billNum, $message['header']['err_message']);
-                $db->finishOperation($operation['id']);
+                $db->setBillError($billNum, $message['header']['err_msg']);
+                $db->finishOperation($operation['id'], false);
 
+                $url = isset( $operation['params']['callbackURL'] ) ? $operation['params']['callbackURL'] : null;
                 $params = ['bill' => $billNum, 'status' => $billStatus]; //клиенту передается статус именно СЧЕТА, а не платежа
-                $this->callbackNotify($url, $params);
 
-                $logger->write('error', "ошибка обработки сообщения 202: {$message['header']['err_message']}");
+                if ( $url ) {
+                    $this->callbackNotify($url, $params);
+                }
+                
+                $logger->write( "ошибка обработки сообщения 202 {$message['header']['err_msg']}", 'error');
+            } else {
+                $db->setBillStatus($billNum, 1);
+                $logger->write("сообщение 202 по счету номер {$message['header']['msg202_num']} успешно обработано сервером ЕРИП", 'main');
             }
         } else {
-            $logger->write('error', "Попытка обработать неожиданное сообщение: счет с номером $billNum не ожидал изменения статуса.");
+            $logger->write("Попытка обработать неожиданное сообщение: счет с номером $billNum не ожидал изменения статуса либо не существует.", 'error', __FILE__, __LINE__);
         }
-        
     }
 
     /**
@@ -99,35 +120,43 @@ class ERIPMessageHandler {
 
         foreach ( $message['body'] as $paymentEntry ) {
             $billNum = $this->getBillNumByPayment($paymentEntry);
-            if ( $billNum ) { // если совершен платеж по счету
-                $operation = $this->getMonitoringOperationByBill($billNum);
-                $addSuccessful = $db->updatePaymentOnBill($billNum, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
-                if ( $addSuccessful && ! empty($operation) ) {
-                    $billStatus = 2;
-                    $db->setBillStatus($billNum, $billStatus);
 
-                    $params = ['bill' => $billNum, 'account' => $paymentEntry['account_num'], 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
-                    $url = $operation['params']['callback_url'];                    
-                    $this->callbackNotify($url, $params);
+            if ( $billNum ) { // если совершен платеж по счету
+                $operation = $this->getMonitoringOperationByBill($billNum) and
+                           $addSuccessful = $db->updatePaymentOnBill( $this->userId, $billNum, array_merge($message['header'], $paymentEntry, ['status' => 1, ])); 
+                
+                if ( $addSuccessful && ! empty($operation) ) {
+                    $params = ['service_id' => $paymentEntry['erip_id'], 'bill' => $billNum, 'account' => $paymentEntry['personal_acc_num'], 'status' => 1, 'amount' => $paymentEntry['amount'] ]; //клиенту передается статус именно ПЛАТЕЖА, а не счета
+                    
+                    $url = isset( $operation['params']['callbackURL'] ) ? $operation['params']['callbackURL'] : null;
+                    if ( $url ) {
+                        $this->callbackNotify($url, $params);
+                    }
                 } else {
-                    $logger->write('error', 'Ошибка добавления записи об оплате в базу!!!');
+                    $logger->write( 'Ошибка добавления записи об оплате в базу!!!', 'error');
                 }
-            } else { // если совершен платеж платеж не по счету
-                $addSuccessful = $db->updatePayment(null, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
-                $operation = $this->getUserPaymentMonitoringOperation();
-                if ( $addSuccessful && ! empty ($operation) ) {
-                    $params = ['account' => $paymentEntry['account_num'], 'status' => 1, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
-                    $url = $operation['params']['callback_url'];
-                    $this->callbackNotify($url, $params);
+            } else { // если совершен платеж  не по счету
+                $operation = $this->getUserPaymentMonitoringOperation() and
+                           $addSuccessful = $db->updatePayment( $this->userId, null, array_merge($message['header'], $paymentEntry, ['status' => 1, ]));
+                
+                if ( ! empty( $addSuccessful ) && ! empty ($operation) ) {
+                    $params = ['service_id' => $paymentEntry['erip_id'], 'account' => $paymentEntry['personal_acc_num'], 'status' => 1, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
+                    
+                    $url = isset( $operation['params']['callbackURL'] ) ? $operation['params']['callbackURL'] : null;
+                    if ( $url ) {
+                        $this->callbackNotify($url, $params);
+                    }
+                    
+                    $logger->write("Сообщение 206 для пользователя {$this->userId} успешно обработано", 'main');
                 } else {
-                    $logger->write('error', 'Ошибка добавления записи об оплате в базу!!!');
+                    $logger->write('Ошибка добавления записи об оплате в базу!!!', 'error');
                 }
             }
         }
     }
 
     /**
-     * Обрабатывает сообщение 210, в соответствии с операцией типа "мониторинг статуса счета" или "мониторинг поступления нвоых платежей.
+     * Обрабатывает сообщение 210, в соответствии с операцией типа "мониторинг статуса счета" или "мониторинг поступления новых платежей".
      * Вызов этой функции для какого-либо конкретного $message должен происходить после вызова 
      * handle206() для того же $message
      *
@@ -139,38 +168,38 @@ class ERIPMessageHandler {
 
         foreach ( $message['body'] as $paymentEntry ) {
             $billNum = $this->getBillNumByPayment($paymentEntry);
-            if (  $billNum ) { // если совершен платеж по счету
-                $operation = $this->getMonitoringOperationByBill($billNum);
-
-                $transferTimestamp = strtotime($paymentEntry['transfer_datetime']);
-                $updateSuccessful = $db->updatePaymentOnBill($billNum, array_merge($paymentEntry, $message['header'], ['status' => 2, 'transfer_timestamp' => $transferTimestamp])); //для начала сойдет :)
-                if ( $updateSuccessful && ! empty($operation) ) {
-                    $billStatus = 3;
-                    $db->setBillStatus($billNum, $billStatus);
-                    $db->finishOperation($operation['id']);
-
-                    $params = ['bill' => $billNum, 'account' => $paymentEntry['account_num'], 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
-                    $url = $operation['params']['callback_url'];
-                    $this->callbackNotify($url, $params);
-                } else {
-                    $logger->write('error', 'Ошибка обновления записи об оплате в базе!!!');
-                }
-            } else {  // если совершен платеж не по счету
-                $paymentId = getPaymentNumByPayment($paymentEntry);
-                if ( ! $paymentId ) {
-                    $logger->write('error', 'Сообщение 210 без предшествующего сообщения 206');
-                    return;
-                }
+            
+            if ( $billNum ) { // если совершен платеж по счету
+                $operation = $this->getMonitoringOperationByBill($billNum) and               
+                           $updateSuccessful = $db->updatePaymentOnBill( $this->userId, $billNum, array_merge($message['header'], $paymentEntry, ['status' => 2, ])); //для начала сойдет :)
                 
-                $updateSuccessful = $db->updatePayment($paymentId, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
-                $operation = $this->getUserPaymentMonitoringOperation();
-                if ( $updateSuccessful && ! empty ($operation) ) {
-                    $params = [ 'account' => $paymentEntry['account_num'], 'status' => 2, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
-                    $url = $operation['params']['callback_url'];
-                    $this->callbackNotify($url, $params);
+                if ( $updateSuccessful && ! empty($operation) ) {
+                    $params = ['bill' => $billNum, 'account' => $paymentEntry['personal_acc_num'], 'status' => 2, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно ПЛАТЕЖА, а не счета
+                    
+                    $url = isset( $operation['params']['callbackURL'] ) ? $operation['params']['callbackURL'] : null;
+                     if ( $url ) {
+                        $this->callbackNotify($url, $params);
+                    }
+                     
                 } else {
-                    $logger->write('error', 'Ошибка добавления записи об оплате в базу!!!');
+                    $logger->write('Ошибка обновления записи об оплате в базе!!!', 'error');
                 }
+            } else if ( $operation = $this->getUserPaymentMonitoringOperation() ) {  // если совершен платеж не по счету и ожидаются оплаты не по счетам
+                $paymentId = $this->getPaymentIdByPayment($paymentEntry);
+                $updateSuccessful = $db->updatePayment(  $this->userId, ! empty( $paymentId ) ? $paymentId : null , array_merge($message['header'], $paymentEntry, ['status' => 2, ]));
+                
+                if ( $updateSuccessful ) {
+                    $params = ['service_id' => $paymentEntry['erip_id'], 'account' => $paymentEntry['personal_acc_num'], 'status' => 2, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
+                    
+                    $url = isset( $operation['params']['callbackURL'] ) ? $operation['params']['callbackURL'] : null;
+                    if ( $url ) {
+                        $this->callbackNotify($url, $params);
+                    }
+                } else {
+                    $logger->write('Ошибка добавления записи об оплате в базу!!!', 'error');
+                }
+            } else {
+                $logger->write('Неожиданное сообщение 210', 'error');
             }
         }
     }
@@ -187,39 +216,32 @@ class ERIPMessageHandler {
         global $logger;
 
         foreach ( $message['body'] as $paymentEntry ) {
-            $billNum = $this->getBillNumByPaymentMessage($paymentEntry);
-            if ( ! $billNum ) { // если совершен платеж по счету
-                $logger->write('error', "Попытка обработать неожиданное сообщение: получено сообщение об оплате счета, не ожидающего оплаты");
-                $operation = $this->getMonitoringOperationByBill($billNum);
-
-                $reversalTimestamp = strtotime($paymentEntry['reversal_datetime']);
-                $updateSuccessful = $db->updatePaymentOnBill($billNum, array_merge($paymentEntry, $message['header'], ['status' => 3, 'reversal_timestamp' => $reversalTimestamp])); //для начала сойдет :)
+            $billNum = $this->getBillNumByPayment($paymentEntry);
+            $reversalTimestamp = strtotime($message['header']['reversal_datetime']);
+            
+            if ( $billNum ) { // если совершен платеж по счету
+                $operation = $this->getMonitoringOperationByBill($billNum) and
+                           $updateSuccessful = $db->updatePaymentOnBill( $this->userId, $billNum, array_merge($message['header'], $paymentEntry, ['status' => 3, 'reversal_datetime' => $reversalTimestamp])); 
                 if ( $updateSuccessful && ! empty($operation) ) {
-                    $billStatus = 5;
-                    $db->setBillStatus($billNum, $billStatus);
-                    $db->finishOperation($operation['id']);
-
-                    $params = ['bill' => $billNum, 'account' => $paymentEntry['account_num'], 'status' => $billStatus, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно СЧЕТА, а не платежа
-                    $url = $operation['params']['callback_url'];
-                    $this->callbackNotify($url, $params);
+                    $params = ['service_id' => $paymentEntry['erip_id'], 'bill' => $billNum, 'account' => $paymentEntry['personal_acc_num'], 'status' => 3, 'amount' => $paymentEntry['amount']]; //клиенту передается статус именно ПЛАТЕЖА, а не счета
+                    $url = isset( $operation['params']['callbackURL'] ) ? $operation['params']['callbackURL'] : null;
+                    if ( $url ) {
+                        $this->callbackNotify($url, $params);
+                    }
                 } else {
-                    $logger->write('error', 'Ошибка обновления записи об оплате в базе!!!');
+                    $logger->write('Ошибка обновления записи об оплате в базе!!!', 'error');
                 }
-            } else { // если совершен платеж не по счету
-                $paymentId = getPaymentNumByPayment($paymentEntry);
-                if ( ! $paymentId ) {
-                    $logger->write('error', 'Сообщение 216 без предшествующего сообщения 206');
-                    return;
-                }
-                
-                $updateSuccessful = $db->updatePayment($paymentId, array_merge($paymentEntry, $message['header'])); //для начала сойдет :)
-                $operation = $this->getUserPaymentMonitoringOperation();
-                if ( $updateSuccessful && ! empty ($operation ) ) {
-                    $params = ['account' => $paymentEntry['account_num'], 'status' => 3, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
-                    $url = $operation['params']['callback_url'];
-                    $this->callbackNotify($url, $params);
+            }  else if ( $operation = $this->getUserPaymentMonitoringOperation() ) { // если совершен платеж не по счету и ожидаются оплаты не по счетам
+                $paymentId = $this->getPaymentIdByPayment($paymentEntry);
+                $updateSuccessful = $db->updatePayment( $this->userId, ! empty( $paymentId ) ? $paymentId : null, array_merge($message['header'], $paymentEntry, ['status' => 3, 'reversal_datetime' => $reversalTimestamp] ) );
+                if ( $updateSuccessful ) {
+                    $params = ['service_id' => $paymentEntry['erip_id'], 'account' => $paymentEntry['personal_acc_num'], 'status' => 3, 'amount' => $paymentEntry['amount']]; //клиенту передается статус ПЛАТЕЖА, а не счета
+                    $url = isset( $operation['params']['callbackURL'] ) ? $operation['params']['callbackURL'] : null;
+                    if ( $url ) {
+                        $this->callbackNotify($url, $params);
+                    }
                 } else {
-                    $logger->write('error', 'Ошибка добавления записи об оплате в базу!!!');
+                    $logger->write( 'Ошибка добавления записи об оплате в базу!!!' , 'error');
                 }
             }
         }
@@ -232,8 +254,10 @@ class ERIPMessageHandler {
      * @return array Массив с данными операции, если операция существует или false, если не существует
      */
     private function getMonitoringOperationByBill($billNum) {
+        global $logger;
+        
         foreach ( $this->operations as $operation ) {
-            if ( $operation['params']['bill'] === $billNum ) {
+            if ( $operation['params']['bill'] == $billNum ) {
                 return $operation;
             }
         }
@@ -263,14 +287,16 @@ class ERIPMessageHandler {
      * @return integer Номер счета, если оплата совершена по счету или false, если соответствия не найдено
      */
     private function getBillNumByPayment($paymentEntry) {
-        if ( empty ( $paymentEntry['account_num'] ) ) {
+        if ( empty ( $paymentEntry['bill_datetime'] ) ) {
             return false;
         }
         
         foreach ( $this->bills as $billNum => $bill ) {
-            if ( $bill['personal_acc_num'] === $paymentEntry['account_num'] &&
-                 $bill['erip_id'] === $paymentEntry['erip_id'] &&
-                 $bill['timestamp'] === strtotime($paymentEntry['bill_datetime'])
+            if ( $bill['user'] == $this->userId &&
+                 $bill['personal_acc_num'] == $paymentEntry['personal_acc_num'] &&
+                 $bill['erip_id'] == $paymentEntry['erip_id'] &&
+                 strtotime( $bill['datetime'] ) === strtotime($paymentEntry['bill_datetime']) &&
+                 ( empty ( $bill['period'] ) &&  empty ( $paymentEntry['period'] ) || $bill['period'] == $paymentEntry['period'] ) 
             ) {
                 return $billNum;
             }
@@ -286,20 +312,21 @@ class ERIPMessageHandler {
      * @return integer Номер оплаты, или false, если соответствия не найдено
      */
     private function getPaymentIdByPayment($paymentEntry) {
+        global $logger;
         global $db;
-        
-        if ( empty ( ! empty ( $paymentEntry['account_num'] ) ) ) {
-            return false;
-        }
 
         $params = array (
-            'central_node_op_num' => $paymentEntry['central_node_op_num'],
+            'user' => $this->userId,
+            'erip_id' => $paymentEntry['erip_id'],
+            'personal_acc_num' => $paymentEntry['personal_acc_num'],
+            'erip_op_num' => $paymentEntry['erip_op_num'],
             'agent_op_num' => $paymentEntry['agent_op_num'],
             'device_id' => $paymentEntry['device_id'],
             'amount' => $paymentEntry['amount'],
         );
         
-        return $db->getPaymentIdWithParams($params);
+        $payment = $db->getPaymentIdWithParams($params);
+        return $payment;
     }
     
     /**
@@ -310,32 +337,33 @@ class ERIPMessageHandler {
      */
     private function callbackNotify($url, $params) {
         global $logger;
-        
+        global $db;
+
+        $secretKey = $db->getUserSecretKey($this->userId); // получаем ключ в основном потоке, т.к. существует риск что потом родительский поток закроет соединение с mysql прежде чем дочерний поток запросит ключ
+
         $pid = pcntl_fork();
         if ( $pid == -1 ) {
-            $logger->write('error', 'Ошибка запуска фоновой процедуры отправки уведомления клиенту: не удалось создать дочерний процесс');
-        } else if ( $pid > 0 ) {
+            $logger->write( 'Ошибка запуска фоновой процедуры отправки уведомления клиенту: не удалось создать дочерний процесс', 'error');
+        } else if ( $pid ) {
+            return;
+        } else {
             //начало кода дочернего процесса
-            global $db;
             
             $url .= '?';
+            $hmacText = '';
             foreach ( $params as $key => $value ) {
                 $url .= "$key=$value&";
                 $hmacText .= $value;
             }
             //добавляем временнУю метку и HMAC
             $time = time();
-
             $hmacText .= $time;
-            $secretKey = $db->getUserSecretKey($this->userId);
             $hmac = hash_hmac( self::HMAC_ALG, $hmacText, $secretKey );
             
-            $url .= "&time=$time&hmac=$hmac";
-            
+            $url .= "time=$time&hmac=$hmac";
 
-            $getParams = ['timeout' => 5];
             for ( $tryCount = 0; $tryCount < 3; $tryCount++ ) {
-                sleep($tryCount * 15);
+                sleep($tryCount * 5);
 
                 $httpCode = get_http_response_code($url);
                 if ( 200 == $httpCode) {
@@ -343,7 +371,7 @@ class ERIPMessageHandler {
                 }
             }
 
-            $logger->write('error', 'Не удалось отправить уведомление клиенту: клиент не ответил кодом 200');
+            $logger->write( 'Не удалось отправить уведомление клиенту: клиент не ответил кодом 200', 'error');
             die(1);
         }
     }

@@ -7,12 +7,14 @@ interface IEripAPI {
      * @param int $eripID Идентификатор услуги в ЕРИП
      * @param string $personalAccNum Номер лицевого счета (уникальное значение, однозначно идентифицирующее потребителя услуг или товар)
      * @param float $amount Сумма задолженности потребителя услуг перед производителем услуг. Отрицательное значение означает задолженность производителя перед потребителем
-     * @param int $currencyCode  Код валюты требований к оплате чёчё
+     * @param int $currencyCode  Код валюты требований к оплате 
+     * @param integer $period  Период, за который выставляется счет 
      * @param object $info Дополнительная инорфмация о платеже
      * @param string $callbackURL Адрес, по которому произойдет образение при изменении статуса заказа
+
      * @return int Номер счета
      */
-    function createBill( $eripID, $personalAccNum, $amount, $currencyCode,  $info, $callbackURL);
+    function createBill( $eripID, $personalAccNum, $amount, $currencyCode, $period,  $info, $callbackURL);
     
     /**
      * Получить информацию о счете
@@ -51,12 +53,12 @@ interface IEripAPI {
     function getBills( $eripID, $fromDatetime, $toDatetime, $status = null);
     
     /**
-     * Получить детальную информацию по платежу
+     * Получить детальную информацию по платежам по счету
      *
      * @param $paymentNum
      * @return object Информация об оплате
      */
-    function getPayment( $paymentNum );
+    function getPaymentsOnBill( $paymentNum );
     
     /**
      * Получить список оплаченных счетов за определенный промежуток времени. Если промежуток времени не указан, то возвращается список оплаченных счетов за последние 30 дней

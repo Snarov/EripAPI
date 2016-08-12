@@ -42,6 +42,8 @@ abstract class Security {
      *
      */
     public static function verifyHMAC ( $username, $password, $class, $method, $params) {
+        global $logger;
+        
         $msgTime = $params['time'];
         $currentTime = time();
 
@@ -53,14 +55,33 @@ abstract class Security {
 
                 $reflection = new \ReflectionMethod( $class, $method );
                 $methodParams = $reflection->getParameters();
-                foreach ($methodParams as $p) {
-                    $name = $p->getName();
+                // foreach ($methodParams as $p) {
+                //     $name = $p->getName();
                     
-                    if ( isset( $params[ $name ] ) ) {
-                        $hmacText .= $params[ $name ];
-                    } 
+                //     if ( isset( $params[ $name ] ) ) {
+                //         $logger->write("HMAC Check: параметр метода $name: " . print_r($params[$name], true), 'debug');
+                        
+                //         if ( is_array( $params[ $name ] ) ) {
+                //             $hmacText .= implode( $params[ $name ] );
+                //         } else {
+                //             $hmacText .= $params[ $name ];
+                //         }
+                //     } 
+                // }
+                foreach ($params as $name => $value ) {
+                    if ( 'time' !== $name && 'hmac' !== $name ) {
+                        $logger->write("HMAC Check: параметр метода $name: " . print_r($params[$name], true), 'debug');
+                        
+                        if ( is_array( $params[ $name ] ) ) {
+                            $hmacText .= implode( $params[ $name ] );
+                        } else {
+                            $hmacText .= $params[ $name ];
+                        }
+                    }
                 }
                 $hmacText .= $msgTime;
+
+                $logger->write("HMAC text: $hmacText", 'debug');
                  
                 $hmac = hash_hmac( self::HMAC_ALG, $hmacText, $secretKey );
                 if ( ! hash_equals( $hmac,  $params['hmac'] ) ) {
