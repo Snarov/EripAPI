@@ -10,6 +10,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+
 if [ -f "$API_DIR/api.pid" ] && ps -p `cat "$API_DIR/api.pid"` &>/dev/null; then
     echo "API уже запущен"
 else
