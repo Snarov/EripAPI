@@ -283,6 +283,10 @@ class ERIPMessageIO {
 
             return strcmp( $msgTypeA, $msgTypeB );
         } );
+        
+        array_walk($fileList, function ( &$fileName, $index ) { //оставляем только имя файла
+            $fileName = basename($fileName);
+        } );
 
         return $fileList;
     }
